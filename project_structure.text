@@ -27,7 +27,8 @@ dataropes-recruitment-tool/
 │   │   ├── test_prompts.py       # Central prompt input/output contract tests
 │   │   ├── test_ai_provider.py   # Provider contract and Gemini adapter tests
 │   │   ├── test_crud.py          # Supabase CRUD behavior tests with a fake client
-│   │   └── test_services.py      # Google Forms and local media service tests
+│   │   ├── test_services.py      # Google Forms and local media service tests
+│   │   └── test_api.py           # FastAPI health and router assembly tests
 │   ├── recordings/               # Shared Local persistent volume for technical interviews
 │   │   └── [job_title]/          # Example: Data_Scientist/
 │   │       └── [candidate_name]/ # Example: Alex_Doe/
@@ -55,7 +56,8 @@ dataropes-recruitment-tool/
 │       │   ├── jobs_schema.py    # Requisition input validation formats
 │       │   ├── candidates_schema.py# Applications, history, screening, overrides, and dashboard rows
 │       │   ├── interviews_schema.py# Scheduled round, numbered upload, verification, and manual notes schemas
-│       │   └── google_forms_schema.py# Typed text/choice questions and clone result
+│       │   ├── google_forms_schema.py# Typed text/choice questions and clone result
+│       │   └── health_schema.py  # Liveness response model
 │       │
 │       ├── prompts/              # Centralized text-AI prompt definitions
 │       │   ├── jd_prompts.py     # System instructions for drafting Markdown JDs

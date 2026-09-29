@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Stages 1–3 are complete: the database migration was applied to Supabase; Pydantic schemas, local recording/anonymization utilities, centralized prompts, the provider-neutral Gemini adapter, tested Supabase CRUD modules, Google Forms integration, and local-media service wrapper are implemented.
+Stages 1–3 and Stage 4 Phase 4.1 are complete: the database migration was applied to Supabase; Pydantic schemas, local recording/anonymization utilities, centralized prompts, the provider-neutral Gemini adapter, tested Supabase CRUD modules, Google Forms integration, local-media service wrapper, and FastAPI app/router foundation are implemented.
 
 ## 1. Database Foundation
 
@@ -90,8 +90,10 @@ Run from the repository root using the backend virtual environment:
 .\backend\.venv\Scripts\python.exe -m unittest discover -s .\backend\tests -v
 ```
 
-Latest result: **71 tests passed**. Python syntax checks and editor diagnostics were also clean. CRUD behavior was tested with a fake client; no live Supabase or Google API request was made.
+The FastAPI foundation exposes `GET /health`, returning the Pydantic response `{"status":"ok"}` without checking Supabase, Google, or Gemini credentials. The app mounts the `/api/v1` router, which is reserved for the feature endpoints in Phase 4.2.
+
+Latest result: **74 tests passed**. Python syntax checks and editor diagnostics were also clean. CRUD behavior was tested with a fake client; no live Supabase or Google API request was made. Starlette emits a deprecation warning that its TestClient's current HTTPX integration will change; tests pass, and this is limited to the test client transport.
 
 ## Not Implemented Yet
 
-The schemas, utilities, prompt builders, provider adapter, CRUD modules, and Phase 3 service integrations are ready, but no API route or Streamlit page calls them yet. Phase 4 must persist the returned Google Form ID/responder URL on the job and include that URL in the reviewed job post. Interview audio remains local-only and is never transcribed or analyzed.
+Feature API routes and Streamlit pages are not implemented yet. Phase 4.2 must persist the returned Google Form ID/responder URL on the job and include that URL in the reviewed job post. Interview audio remains local-only and is never transcribed or analyzed.

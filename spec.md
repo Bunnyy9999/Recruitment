@@ -129,7 +129,7 @@ Google Forms settings read `GOOGLE_SERVICE_ACCOUNT_FILE` from the environment; r
 
 ## 4. Prototype REST surface (Streamlit → FastAPI)
 
-All paths are relative to `BACKEND_API_URL` (never hardcoded). JSON unless noted.
+All paths are relative to `BACKEND_API_URL` (never hardcoded). JSON unless noted. `GET /health` returns the Pydantic-validated response `{"status":"ok"}` without requiring external credentials or database availability. Feature endpoints are mounted under `/api/v1`.
 
 | Method | Path | Role | Purpose |
 |---|---|---|---|

@@ -75,9 +75,11 @@ This plan follows the modular architecture in `project_structure.text` and the l
 ## STAGE 4: FastAPI Router Layer
 *Goal: Keep endpoints thin, schema-validated, and independent of AI vendors.*
 
-### Phase 4.1: Framework Assembly
-- Configure `backend/app/main.py`, environment settings, and `backend/app/api/router.py`.
-- Ensure API request and response data uses Pydantic schemas.
+### Phase 4.1: Framework Assembly — [X] DONE
+- [X] Add FastAPI and Uvicorn backend dependencies.
+- [X] Configure `backend/app/main.py` and assemble the root and `/api/v1` routers in `backend/app/api/router.py`.
+- [X] Add a Pydantic health response model and keep `/health` independent of external services and credentials.
+- [X] Add `backend/tests/test_api.py` for the health response and router assembly; run the complete backend unittest suite.
 
 ### Phase 4.2: Feature Endpoints
 - Implement job creation, JD generation, edits, form cloning, and LinkedIn copy endpoints.
