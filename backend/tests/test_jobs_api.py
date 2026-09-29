@@ -1,0 +1,121 @@
+from unittest import TestCase
+from unittest.mock import Mock, patch
+from uuid import uuid4
+
+from fastapi.testclient import TestClient
+
+from backend.app.api.router import app
+from backend.app.api.v1 import jobs as jobs_router
+from backend.app.schemas.jobs_schema import JobCreate, JobPatch, JobRead, JobStatus
+
+
+class FakeJobsDb:
+    def __init__(self):
+        self.jobs: dict[str, JobRead] = {}
+
+    def create_job(self, job: JobCreate) -> JobRead:
+        row = JobRead(
+            id=uuid4(),
+            title=job.title,
+            tech_stack=job.tech_stack,
+            seniority=job.seniority,
+            compensation_min=job.compensation_min,
+            compensation_max=job.compensation_max,
+            jd_markdown=None,
+            google_form_id=None,
+            google_form_url=None,
+            linkedin_blurb=None,
+            status=JobStatus.draft,
+            created_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+        )
+        self.jobs[str(row.id)] = row
+        return row
+
+    def list_jobs(self, *, status: JobStatus | None = None) -> list[JobRead]:
+        rows = list(self.jobs.values())
+        if status is not None:
+            rows = [row for row in rows if row.status == status]
+        return sorted(rows, key=lambda item: item.created_at, reverse=True)
+
+    def get_job(self, job_id):
+        return self.jobs.get(str(job_id))
+
+    def update_job(self, job_id, patch: JobPatch):
+        row = self.jobs[str(job_id)]
+        values = patch.model_dump(exclude_unset=True)
+        for key, value in values.items():
+            setattr(row, key, value)
+        return row
+
+
+class JobsApiTests(TestCase):
+    def setUp(self) -> None:
+        self.store = FakeJobsDb()
+        jobs_router.get_jobs_store = lambda: self.store
+        self.client = TestClient(app)
+
+    def tearDown(self) -> None:
+        self.client.close()
+
+    def test_create_job_returns_201_and_job_payload(self) -> None:
+        response = self.client.post(
+            "/api/v1/jobs",
+            json={
+                "title": "Data Engineer",
+                "tech_stack": "Python, Postgres",
+                "seniority": "Senior",
+                "compensation_min": 110000,
+                "compensation_max": 150000,
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        self.assertEqual(payload["title"], "Data Engineer")
+        self.assertEqual(payload["status"], "draft")
+
+    def test_patch_job_updates_fields(self) -> None:
+        created = self.store.create_job(
+            JobCreate(
+                title="Data Scientist",
+                tech_stack="Python, SQL",
+                seniority="Mid",
+            )
+        )
+
+        response = self.client.patch(
+            f"/api/v1/jobs/{created.id}",
+            json={"status": "posted", "jd_markdown": "# JD"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "posted")
+        self.assertEqual(payload["jd_markdown"], "# JD")
+
+    def test_linkedin_blurb_requires_form_and_jd(self) -> None:
+        created = self.store.create_job(
+            JobCreate(title="Data Scientist", tech_stack="Python", seniority="Mid")
+        )
+
+        response = self.client.post(f"/api/v1/jobs/{created.id}/linkedin-blurb")
+
+        self.assertEqual(response.status_code, 409)
+
+    def test_linkedin_blurb_persists_provider_output_and_form_url(self) -> None:
+        created = self.store.create_job(
+            JobCreate(title="Data Scientist", tech_stack="Python", seniority="Mid")
+        )
+        self.store.update_job(
+            created.id,
+            JobPatch(jd_markdown="# Data Scientist", google_form_url="https://forms.example/apply"),
+        )
+
+        provider = Mock()
+        provider.generate_text.return_value = "Apply here: https://forms.example/apply"
+        with patch.object(jobs_router, "get_ai_provider", return_value=provider):
+            response = self.client.post(f"/api/v1/jobs/{created.id}/linkedin-blurb")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["linkedin_blurb"], "Apply here: https://forms.example/apply")
+        provider.generate_text.assert_called_once()

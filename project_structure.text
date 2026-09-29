@@ -12,11 +12,12 @@ dataropes-recruitment-tool/
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   ├── main.py                   # Streamlit entrypoint (Multi-page configuration)
+│   ├── ui.py                     # Shared API client, styling, and UI helpers
 │   └── pages/
 │       ├── 1_🎯_Hiring_Request.py # Phase 1: JD generation & Google Form setup
 │       ├── 2_🔄_Sync_&_Screen.py  # Phase 2: Form Syncing, Resume/Form Match, Override Dashboard
 │       ├── 3_🎙️_Interviews.py     # Phase 3: Local media upload and verification tracking
-│       └── 4_💼_Executive.py      # Phase 4: Compensation & CEO final decision gate
+│       ├── 4_💼_Executive.py      # Phase 4: Compensation & CEO final decision gate
 │
 ├── backend/                      # FastAPI Business Logic Engine
 │   ├── Dockerfile

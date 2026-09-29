@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Stages 1–3 and Stage 4 Phase 4.1 are complete: the database migration was applied to Supabase; Pydantic schemas, local recording/anonymization utilities, centralized prompts, the provider-neutral Gemini adapter, tested Supabase CRUD modules, Google Forms integration, local-media service wrapper, and FastAPI app/router foundation are implemented.
+Stages 1–3 and Stage 4 are complete: the database migration was applied to Supabase; Pydantic schemas, local recording/anonymization utilities, centralized prompts, the provider-neutral Gemini adapter, tested Supabase CRUD modules, Google Forms integration, local-media service wrapper, and FastAPI feature routes are implemented.
 
 ## 1. Database Foundation
 
@@ -92,8 +92,8 @@ Run from the repository root using the backend virtual environment:
 
 The FastAPI foundation exposes `GET /health`, returning the Pydantic response `{"status":"ok"}` without checking Supabase, Google, or Gemini credentials. The app mounts the `/api/v1` router, which is reserved for the feature endpoints in Phase 4.2.
 
-Latest result: **74 tests passed**. Python syntax checks and editor diagnostics were also clean. CRUD behavior was tested with a fake client; no live Supabase or Google API request was made. Starlette emits a deprecation warning that its TestClient's current HTTPX integration will change; tests pass, and this is limited to the test client transport.
+Latest result: **78 tests passed**. Python syntax checks and editor diagnostics were also clean. CRUD behavior was tested with a fake client; no live Supabase, Gemini, or Google API request was made. Starlette emits a deprecation warning that its TestClient's current HTTPX integration will change; tests pass, and this is limited to the test client transport.
 
 ## Not Implemented Yet
 
-Feature API routes and Streamlit pages are not implemented yet. Phase 4.2 must persist the returned Google Form ID/responder URL on the job and include that URL in the reviewed job post. Interview audio remains local-only and is never transcribed or analyzed.
+The backend feature routes and local Streamlit multipage frontend are implemented. Interview audio remains local-only and is never transcribed or analyzed. Live external integrations and Supabase/RLS behavior still need environment-backed smoke tests. Docker remains intentionally deferred.

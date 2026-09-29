@@ -82,10 +82,11 @@ This plan follows the modular architecture in `project_structure.text` and the l
 - [X] Add `backend/tests/test_api.py` for the health response and router assembly; run the complete backend unittest suite.
 
 ### Phase 4.2: Feature Endpoints
-- Implement job creation, JD generation, edits, form cloning, and LinkedIn copy endpoints.
-- Persist cloned form ID/URL through CRUD and ensure the reviewed job post includes that job-specific responder URL.
-- Implement candidate sync, identity matching, history, and HR override endpoints.
-- Implement interview upload to the required local directory and verify the saved file; do not transcribe or analyze audio.
+- [X] Implement job creation, JD generation, edits, form cloning, and LinkedIn copy endpoints.
+- [X] Persist cloned form ID/URL through CRUD and ensure the reviewed job post includes that job-specific responder URL.
+- [X] Implement candidate sync, identity matching, history, application listing, and HR override endpoints.
+- [X] Implement interview scheduling, feedback updates, and upload to the required local directory; verify the saved file without transcribing or analyzing audio.
+- [X] Implement CEO dossier, move-to-review, and final-decision endpoints with lifecycle guards.
 
 ---
 
@@ -93,21 +94,22 @@ This plan follows the modular architecture in `project_structure.text` and the l
 *Goal: Deliver role-aware workflows backed by the FastAPI contract.*
 
 ### Phase 5.1: Routing & Session State
-- Build `frontend/main.py` with role state for `hr` and `staff`.
+- [X] Build `frontend/main.py` with the Streamlit command center and shared role-aware navigation.
+- [X] Add shared frontend API/styling helpers in `frontend/ui.py` and use a separate `frontend/.venv`.
 
 ### Phase 5.2: Hiring Request UI
-- Build hiring criteria inputs, editable JD review, and Google Form setup.
+- [X] Build hiring criteria inputs, editable JD review, LinkedIn post review, and Google Form setup.
 
 ### Phase 5.3: Sync & Screening UI
-- Add sync controls, passed/failed application views, applicant history, and HR override actions.
+- [X] Add sync controls, applicant pool filters, screening results, and HR override actions.
 
 ### Phase 5.4: Interview UI
-- From a job, let HR search/select an applicant and open the job-specific profile showing sync pass/fail and its explanation.
-- List the application's interview rounds by sequence number with schedule, upload/verification state, and human feedback.
-- Let HR schedule the next round, then upload a recording to its specific numbered entry; show local-storage verification. Do not display transcripts or automated audio analysis.
+- [X] Let HR select an applicant and view the job-specific screening result and explanation.
+- [X] List numbered interview rounds with schedule, upload/verification state, and human feedback.
+- [X] Let HR schedule the next round and upload a recording to its numbered entry; do not display transcripts or automated audio analysis.
 
 ### Phase 5.5: Executive Decision UI
-- Show screening outcomes, verified recording references, and human feedback; provide the CEO final-decision action.
+- [X] Show screening outcomes, verified recording references, and human feedback; provide the CEO final-decision action.
 
 ---
 

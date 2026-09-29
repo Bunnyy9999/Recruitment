@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     supabase_url: AnyHttpUrl | None = None
     supabase_service_role_key: SecretStr | None = None
     google_service_account_file: Path | None = None
+    google_oauth_client_file: Path | None = None
+    google_oauth_token_file: Path | None = None
     google_form_template_id: str | None = None
     google_drive_folder_id: str | None = None
 
@@ -40,7 +42,12 @@ class Settings(BaseSettings):
             raise ValueError("GEMINI_MODEL must not be empty")
         return model
 
-    @field_validator("google_service_account_file", mode="before")
+    @field_validator(
+        "google_service_account_file",
+        "google_oauth_client_file",
+        "google_oauth_token_file",
+        mode="before",
+    )
     @classmethod
     def resolve_google_service_account_file(cls, value: Path | str | None) -> Path | None:
         if value is None or not str(value).strip():

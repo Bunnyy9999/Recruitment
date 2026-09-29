@@ -13,6 +13,10 @@ from backend.app.schemas.candidates_schema import (
     CandidateHistoryRecord,
     CandidateIdentityLookup,
     CandidateRead,
+    ApplicationScreeningResult,
+    ScreeningDecision,
+    ApplicationScreeningResult,
+    ScreeningDecision,
     PipelineStatus,
 )
 from backend.app.services.supabase_service import supabase_client
@@ -28,6 +32,17 @@ def create_candidate(candidate: CandidateCreate) -> CandidateRead:
     if not rows:
         raise DatabaseOperationError("create candidate returned no row")
     return CandidateRead.model_validate(rows[0])
+
+
+def get_candidate(candidate_id: UUID) -> CandidateRead | None:
+    rows = execute_query(
+        supabase_client.table("candidates")
+        .select("*")
+        .eq("id", str(candidate_id))
+        .limit(1),
+        operation="get candidate",
+    )
+    return CandidateRead.model_validate(rows[0]) if rows else None
 
 
 def find_candidate_by_identity(
@@ -223,5 +238,94 @@ def apply_hr_pass_override(
         .eq("pipeline_status", "failed_at_sync")
         .select("*"),
         operation="apply HR pass override",
+    )
+    return ApplicationRead.model_validate(rows[0]) if rows else None
+
+
+def save_application_screening(
+    application_id: UUID,
+    result: ApplicationScreeningResult,
+) -> ApplicationRead | None:
+    passed = result.agent_decision is ScreeningDecision.passed
+    values = {
+        "agent_decision": result.agent_decision.value,
+        "screening_summary": result.screening_summary,
+        "pipeline_status": "active_pipeline" if passed else "failed_at_sync",
+        "final_decision": "pending" if passed else "fail",
+    }
+    rows = execute_query(
+        supabase_client.table("applications")
+        .update(values)
+        .eq("id", str(application_id))
+        .select("*"),
+        operation="save application screening",
+    )
+    return ApplicationRead.model_validate(rows[0]) if rows else None
+
+
+def save_application_screening(
+    application_id: UUID,
+    result: ApplicationScreeningResult,
+) -> ApplicationRead | None:
+    passed = result.agent_decision is ScreeningDecision.passed
+    rows = execute_query(
+        supabase_client.table("applications")
+        .update(
+            {
+                "agent_decision": result.agent_decision.value,
+                "screening_summary": result.screening_summary,
+                "pipeline_status": "active_pipeline" if passed else "failed_at_sync",
+                "final_decision": "pending" if passed else "fail",
+            }
+        )
+        .eq("id", str(application_id))
+        .select("*"),
+        operation="save application screening",
+    )
+    return ApplicationRead.model_validate(rows[0]) if rows else None
+
+
+def move_application_to_ceo(application_id: UUID) -> ApplicationRead | None:
+    rows = execute_query(
+        supabase_client.table("applications")
+        .update(
+            {
+                "current_stage": "ceo_review",
+                "pipeline_status": "pending_ceo_decision",
+            }
+        )
+        .eq("id", str(application_id))
+        .eq("pipeline_status", "active_pipeline")
+        .eq("final_decision", "pending")
+        .select("*"),
+        operation="move application to CEO review",
+    )
+    return ApplicationRead.model_validate(rows[0]) if rows else None
+
+
+def save_final_decision(
+    application_id: UUID,
+    *,
+    final_decision: str,
+    remarks: str | None,
+) -> ApplicationRead | None:
+    if final_decision not in {"pass", "fail"}:
+        raise ValueError("final_decision must be pass or fail")
+    rows = execute_query(
+        supabase_client.table("applications")
+        .update(
+            {
+                "final_decision": final_decision,
+                "pipeline_status": "closed_complete",
+                "current_stage": "closed",
+                "remarks": remarks,
+            }
+        )
+        .eq("id", str(application_id))
+        .eq("current_stage", "ceo_review")
+        .eq("pipeline_status", "pending_ceo_decision")
+        .eq("final_decision", "pending")
+        .select("*"),
+        operation="save final application decision",
     )
     return ApplicationRead.model_validate(rows[0]) if rows else None

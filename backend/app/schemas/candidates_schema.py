@@ -12,6 +12,8 @@ from pydantic import (
     model_validator,
 )
 
+from backend.app.schemas.interviews_schema import InterviewRoundRead
+
 
 class ApplicationStage(str, Enum):
     sync_evaluation = "sync_evaluation"
@@ -79,6 +81,19 @@ class ApplicationScreeningResult(BaseModel):
     screening_summary: str = Field(min_length=1, max_length=2000)
 
 
+class ApplicantSyncRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    full_name: str = Field(min_length=1, max_length=200)
+    email: EmailStr
+    phone: str | None = Field(default=None, min_length=1, max_length=32)
+    linkedin_url: HttpUrl | None = None
+    age: int | None = Field(default=None, ge=0)
+    gender: str | None = Field(default=None, min_length=1, max_length=100)
+    resume_text: str = Field(min_length=1, max_length=100000)
+    form_responses: dict[str, str] = Field(default_factory=dict, max_length=100)
+
+
 class HROverrideRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -142,3 +157,17 @@ class ApplicationDashboardRecord(BaseModel):
     final_decision: FinalDecision
     remarks: str | None
     application_created_at: AwareDatetime
+
+
+class FinalDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    final_decision: FinalDecision
+    remarks: str | None = Field(default=None, max_length=5000)
+
+
+class ApplicationDossier(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    application: ApplicationRead
+    interviews: list[InterviewRoundRead]

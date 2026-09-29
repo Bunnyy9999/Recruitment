@@ -61,4 +61,5 @@ class GoogleFormCloneResult(BaseModel):
 
     form_id: str = Field(min_length=1)
     responder_url: AnyHttpUrl
+    editor_url: AnyHttpUrl
     questions_added: int = Field(ge=1)

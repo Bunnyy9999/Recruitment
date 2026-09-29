@@ -23,6 +23,17 @@ def list_interview_rounds(application_id: UUID) -> list[InterviewRoundRead]:
     return [InterviewRoundRead.model_validate(row) for row in rows]
 
 
+def get_interview_round(interview_id: UUID) -> InterviewRoundRead | None:
+    rows = execute_query(
+        supabase_client.table("interviews")
+        .select("*")
+        .eq("id", str(interview_id))
+        .limit(1),
+        operation="get interview round",
+    )
+    return InterviewRoundRead.model_validate(rows[0]) if rows else None
+
+
 def schedule_interview_round(
     application_id: UUID,
     schedule: InterviewScheduleRequest,

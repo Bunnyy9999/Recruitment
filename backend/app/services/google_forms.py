@@ -1,6 +1,10 @@
 from pathlib import Path
 from typing import Any, Callable
+import logging
 
+from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2.credentials import Credentials as OAuthCredentials
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
@@ -31,6 +35,7 @@ _GOOGLE_SCOPES = (
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/forms.body",
 )
+_LOGGER = logging.getLogger(__name__)
 
 
 class GoogleFormsService:
@@ -42,12 +47,14 @@ class GoogleFormsService:
         forms_service: Any | None = None,
         service_builder: Callable[..., Any] = build,
         credentials_factory: Callable[..., Any] = Credentials.from_service_account_file,
+        oauth_flow_factory: Callable[..., Any] = InstalledAppFlow.from_client_secrets_file,
     ) -> None:
         self._settings_provider = settings_provider
         self._drive_service = drive_service
         self._forms_service = forms_service
         self._service_builder = service_builder
         self._credentials_factory = credentials_factory
+        self._oauth_flow_factory = oauth_flow_factory
 
     def generate_and_clone_application_form(
         self,
@@ -88,6 +95,7 @@ class GoogleFormsService:
                         "name": request.title,
                         **({"parents": [folder_id]} if folder_id else {}),
                     },
+                    supportsAllDrives=True,
                 )
                 .execute()
             )
@@ -137,30 +145,55 @@ class GoogleFormsService:
             return GoogleFormCloneResult(
                 form_id=copied_file_id,
                 responder_url=responder_url,
+                editor_url=f"https://docs.google.com/forms/d/{copied_file_id}/edit",
                 questions_added=len(request.questions),
             )
         except GoogleFormsIntegrationError:
             self._delete_partial_copy(drive_service, copied_file_id)
             raise
-        except Exception:
+        except Exception as error:
+            response = getattr(error, "resp", None)
+            provider_status = getattr(response, "status", None)
+            provider_reason = getattr(error, "reason", None)
+            _LOGGER.error(
+                "Google Form clone failed during provider operation: type=%s status=%s reason=%s",
+                type(error).__name__,
+                provider_status,
+                provider_reason,
+            )
             self._delete_partial_copy(drive_service, copied_file_id)
+            if (
+                provider_status == 403
+                and isinstance(provider_reason, str)
+                and "storage quota" in provider_reason.lower()
+            ):
+                raise GoogleFormsIntegrationError(
+                    "The service account has no available My Drive storage quota. "
+                    "Set GOOGLE_DRIVE_FOLDER_ID to a folder inside a Shared Drive "
+                    "where the service account has Content manager access, or use "
+                    "Workspace domain-wide delegation."
+                ) from None
             raise GoogleFormsIntegrationError(
-                "Google Drive or Forms API operation failed"
+                f"Google Drive or Forms API operation failed ({type(error).__name__})"
             ) from None
 
     def _get_services(self, configuration: Settings) -> tuple[Any, Any]:
         if self._drive_service is not None and self._forms_service is not None:
             return self._drive_service, self._forms_service
 
-        credential_file = configuration.google_service_account_file
-        if credential_file is None or not credential_file.is_file():
-            raise GoogleFormsConfigurationError(
-                "GOOGLE_SERVICE_ACCOUNT_FILE must point to a readable credential file"
-            )
         try:
-            credentials = self._credentials_factory(
-                str(credential_file), scopes=list(_GOOGLE_SCOPES)
-            )
+            if configuration.google_oauth_client_file is not None:
+                credentials = self._load_oauth_credentials(configuration)
+            else:
+                credential_file = configuration.google_service_account_file
+                if credential_file is None or not credential_file.is_file():
+                    raise GoogleFormsConfigurationError(
+                        "Set GOOGLE_OAUTH_CLIENT_FILE or provide a readable "
+                        "GOOGLE_SERVICE_ACCOUNT_FILE"
+                    )
+                credentials = self._credentials_factory(
+                    str(credential_file), scopes=list(_GOOGLE_SCOPES)
+                )
             if self._drive_service is None:
                 self._drive_service = self._service_builder(
                     "drive", "v3", credentials=credentials, cache_discovery=False
@@ -169,11 +202,50 @@ class GoogleFormsService:
                 self._forms_service = self._service_builder(
                     "forms", "v1", credentials=credentials, cache_discovery=False
                 )
+        except GoogleFormsConfigurationError:
+            raise
         except Exception:
             raise GoogleFormsConfigurationError(
-                "Google service-account client initialization failed"
+                "Google client initialization failed"
             ) from None
         return self._drive_service, self._forms_service
+
+    def _load_oauth_credentials(self, configuration: Settings) -> OAuthCredentials:
+        client_file = configuration.google_oauth_client_file
+        token_file = configuration.google_oauth_token_file
+        if client_file is None or not client_file.is_file():
+            raise GoogleFormsConfigurationError(
+                "GOOGLE_OAUTH_CLIENT_FILE must point to a readable OAuth client JSON file"
+            )
+        if token_file is None:
+            raise GoogleFormsConfigurationError(
+                "GOOGLE_OAUTH_TOKEN_FILE is required when OAuth is enabled"
+            )
+
+        credentials: OAuthCredentials | None = None
+        if token_file.is_file():
+            try:
+                credentials = OAuthCredentials.from_authorized_user_file(
+                    str(token_file), scopes=list(_GOOGLE_SCOPES)
+                )
+            except (ValueError, OSError):
+                credentials = None
+
+        if credentials is not None and credentials.valid:
+            return credentials
+        if credentials is not None and credentials.expired and credentials.refresh_token:
+            credentials.refresh(Request())
+        else:
+            flow = self._oauth_flow_factory(str(client_file), scopes=list(_GOOGLE_SCOPES))
+            credentials = flow.run_local_server(
+                port=0,
+                access_type="offline",
+                prompt="consent",
+            )
+
+        token_file.parent.mkdir(parents=True, exist_ok=True)
+        token_file.write_text(credentials.to_json(), encoding="utf-8")
+        return credentials
 
     @staticmethod
     def _question_item(question: GoogleFormQuestion) -> dict[str, object]:
@@ -206,6 +278,9 @@ class GoogleFormsService:
         if copied_file_id is None:
             return
         try:
-            drive_service.files().delete(fileId=copied_file_id).execute()
+            drive_service.files().delete(
+                fileId=copied_file_id,
+                supportsAllDrives=True,
+            ).execute()
         except Exception:
             pass

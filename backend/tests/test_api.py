@@ -20,4 +20,7 @@ class FastAPIAssemblyTests(TestCase):
 
     def test_feature_paths_are_versioned(self) -> None:
         paths = app.openapi()["paths"]
-        self.assertEqual(set(paths), {"/health"})
+        self.assertIn("/health", paths)
+        self.assertTrue(all(path.startswith(("/health", "/api/v1/")) for path in paths))
+        self.assertIn("/api/v1/jobs/{job_id}/sync", paths)
+        self.assertIn("/api/v1/applications/{application_id}/hr-override", paths)
