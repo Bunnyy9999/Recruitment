@@ -1,0 +1,12 @@
+.env
+.env.example
+**/.env
+**/.venv/
+__pycache__/
+*.py[cod]
+backend/recordings/
+credentials/
+secrets/
+*service-account*.json
+backend/.venv/
+supabase/.temp/

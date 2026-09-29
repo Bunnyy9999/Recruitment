@@ -1,0 +1,80 @@
+dataropes-recruitment-tool/
+├── .cursorrules                  # Optional: persistent instructions for Cursor editor
+├── .env.example                  # Environment variable names for Gemini, Supabase, Google Forms, and recordings
+├── .gitignore                    # Excludes local environment files, virtual environments, caches, and recordings
+├── CLAUDE.md                     # Central system context and core engine instructions
+├── spec.md                       # Comprehensive product and functional workflow spec
+├── Done.md                       # Plain-language summary of completed work, behavior, and verification
+├── docker-compose.yml            # Orchestrates local Streamlit, FastAPI, and Worker containers
+├── project_structure.text         # This architecture layout file
+│
+├── frontend/                     # Streamlit App UI
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── main.py                   # Streamlit entrypoint (Multi-page configuration)
+│   └── pages/
+│       ├── 1_🎯_Hiring_Request.py # Phase 1: JD generation & Google Form setup
+│       ├── 2_🔄_Sync_&_Screen.py  # Phase 2: Form Syncing, Resume/Form Match, Override Dashboard
+│       ├── 3_🎙️_Interviews.py     # Phase 3: Local media upload and verification tracking
+│       └── 4_💼_Executive.py      # Phase 4: Compensation & CEO final decision gate
+│
+├── backend/                      # FastAPI Business Logic Engine
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── tests/                    # Focused backend contract tests
+│   │   ├── test_schemas.py       # Pydantic request/response schema tests
+│   │   ├── test_utils.py         # Recording path and text anonymization tests
+│   │   ├── test_prompts.py       # Central prompt input/output contract tests
+│   │   ├── test_ai_provider.py   # Provider contract and Gemini adapter tests
+│   │   ├── test_crud.py          # Supabase CRUD behavior tests with a fake client
+│   │   └── test_services.py      # Google Forms and local media service tests
+│   ├── recordings/               # Shared Local persistent volume for technical interviews
+│   │   └── [job_title]/          # Example: Data_Scientist/
+│   │       └── [candidate_name]/ # Example: Alex_Doe/
+│   │           └── [YYYYMMDD]/   # Example: 20260928/technical_interview_1.mp3
+│   │
+│   └── app/
+│       ├── main.py               # FastAPI application entrypoint
+│       ├── config.py             # Global environment settings, including Gemini credentials/model and RECORDINGS_DIR
+│       │
+│       ├── api/                  # REST Endpoint Routers Layer
+│       │   ├── router.py         # Main API Router assembly
+│       │   └── v1/
+│       │       ├── jobs.py       # Job postings & Google Form generation endpoints
+│       │       ├── candidates.py # Sync, history check, and HR override actions
+│       │       └── interviews.py # Schedule numbered rounds, upload/verify recordings, and save human feedback
+│       │
+│       ├── database/             # Database access layer
+│       │   └── crud/             # Reads, writes, transactions, and view lookups; imports the client from services.supabase_service
+│       │       ├── jobs_db.py
+│       │       ├── candidates_db.py
+│       │       ├── interviews_db.py  # Per-application interview rounds and recording metadata
+│       │       └── errors.py      # Shared safe query execution and database exceptions
+│       │
+│       ├── schemas/              # Pydantic Data Validation Models
+│       │   ├── jobs_schema.py    # Requisition input validation formats
+│       │   ├── candidates_schema.py# Applications, history, screening, overrides, and dashboard rows
+│       │   ├── interviews_schema.py# Scheduled round, numbered upload, verification, and manual notes schemas
+│       │   └── google_forms_schema.py# Typed text/choice questions and clone result
+│       │
+│       ├── prompts/              # Centralized text-AI prompt definitions
+│       │   ├── jd_prompts.py     # System instructions for drafting Markdown JDs
+│       │   ├── form_prompts.py   # Dynamic job-specific application question generation
+│       │   ├── screen_prompts.py # Anonymized Resume + Form response matching prompts
+│       │
+│       ├── services/             # Core logic and provider/client integrations
+│       │   ├── ai/               # Provider-neutral AI service boundary and adapters
+│       │   │   ├── base.py       # Shared provider contract used by business logic
+│       │   │   └── gemini_flash.py# Gemini Flash adapter; requests are stateless and output is Pydantic-validated
+│       │   ├── supabase_service.py# Lazy Supabase client using SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
+│       │   ├── google_forms.py   # Drive template cloning and typed Forms API updates
+│       │   └── local_media_service.py# Interview-round recording storage/verification wrapper
+│       │
+│       ├── utils/                # Helper libraries
+│       │   ├── anonymizer.py     # Replace supplied name, age, and gender values before text screening
+│       │   └── file_handler.py   # Safe configured recording paths, exclusive writes, and file verification
+│
+│
+└── supabase/                     # Local Schema Migrations Tracking
+    └── migrations/
+        └── 20260928000000_init_recruitment_schema.sql  # Database initialization script
