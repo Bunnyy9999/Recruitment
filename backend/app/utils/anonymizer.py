@@ -23,6 +23,7 @@ def anonymize_applicant_text(
     full_name: str,
     age: int | None = None,
     gender: str | None = None,
+    email: str | None = None,
 ) -> str:
     if not isinstance(text, str):
         raise TypeError("applicant text must be a string")
@@ -32,6 +33,8 @@ def anonymize_applicant_text(
         raise ValueError("age must be a non-negative integer or None")
     if gender is not None and not isinstance(gender, str):
         raise TypeError("gender must be a string or None")
+    if email is not None and not isinstance(email, str):
+        raise TypeError("email must be a string or None")
 
     anonymized = _AGE_FIELD.sub("[AGE]", text)
     anonymized = _GENDER_FIELD.sub("[GENDER]", anonymized)
@@ -46,6 +49,7 @@ def anonymize_applicant_text(
             anonymized = re.sub(pattern, "[AGE]", anonymized, flags=re.IGNORECASE)
 
     anonymized = _replace_literal(anonymized, gender, "[GENDER]")
+    anonymized = _replace_literal(anonymized, email, "[EMAIL]")
     anonymized = _replace_literal(anonymized, full_name, "[NAME]")
     anonymized = re.sub(r"[ \t]+", " ", anonymized)
     anonymized = re.sub(r" *\n *", "\n", anonymized)

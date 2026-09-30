@@ -19,18 +19,17 @@ from backend.app.schemas.google_forms_schema import (
 )
 from backend.app.prompts.form_prompts import FORM_QUESTION_SYSTEM_PROMPT, build_form_questions_user_prompt
 from backend.app.schemas.candidates_schema import (
-    ApplicantSyncRequest,
-    ApplicationRead,
-    ApplicationCreate,
-    ApplicationScreeningResult,
-    CandidateCreate,
-    CandidateIdentityLookup,
+    ApplicationApplicantRead,
+    FormSyncResult,
     PipelineStatus,
 )
-from backend.app.prompts.screen_prompts import SCREENING_SYSTEM_PROMPT, build_screening_user_prompt
-from backend.app.utils.anonymizer import anonymize_applicant_text
 from backend.app.services.ai.gemini_flash import GeminiFlashProvider
-from backend.app.services.google_forms import GoogleFormsIntegrationError, GoogleFormsService
+from backend.app.services.google_forms import (
+    GoogleFormsConfigurationError,
+    GoogleFormsIntegrationError,
+    GoogleFormsService,
+)
+from backend.app.services.form_sync_service import sync_form_responses
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -155,6 +154,8 @@ def clone_form_route(job_id: UUID, question_set: GoogleFormQuestionSet) -> Googl
         )
     except GoogleFormsIntegrationError as error:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)) from error
+    except GoogleFormsConfigurationError as error:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error)) from error
     updated = get_jobs_store().update_job(
         job_id,
         JobPatch(google_form_id=result.form_id, google_form_url=str(result.responder_url)),
@@ -201,70 +202,33 @@ def linkedin_blurb_route(job_id: UUID) -> JobRead:
     return updated
 
 
-@router.get("/{job_id}/applications", response_model=list[ApplicationRead])
+@router.get("/{job_id}/applications", response_model=list[ApplicationApplicantRead])
 def list_job_applications_route(
     job_id: UUID,
     *,
     pipeline_status: PipelineStatus | None = None,
-) -> list[ApplicationRead]:
+) -> list[ApplicationApplicantRead]:
     if get_jobs_store().get_job(job_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
     return candidates_db.list_job_applications(job_id, pipeline_status=pipeline_status)
 
 
-@router.post("/{job_id}/sync", response_model=ApplicationRead, status_code=status.HTTP_201_CREATED)
-def sync_applicant_route(job_id: UUID, request: ApplicantSyncRequest) -> ApplicationRead:
+@router.post("/{job_id}/sync", response_model=FormSyncResult)
+def sync_applicants_route(job_id: UUID) -> FormSyncResult:
     row = get_jobs_store().get_job(job_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
     if not row.jd_markdown:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="job description is required before sync")
-
-    identity = CandidateIdentityLookup(
-        email=request.email,
-        phone=request.phone,
-        linkedin_url=request.linkedin_url,
-    )
+    if not row.google_form_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="application form is required before sync")
     try:
-        candidate = candidates_db.find_candidate_by_identity(identity)
-    except AmbiguousCandidateMatchError as error:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
-
-    if candidate is None:
-        candidate = candidates_db.create_candidate(
-            CandidateCreate(
-                full_name=request.full_name,
-                email=request.email,
-                phone=request.phone,
-                linkedin_url=request.linkedin_url,
-            )
+        return sync_form_responses(
+            row,
+            forms_service=GoogleFormsService(),
+            ai_provider=get_ai_provider(),
         )
-    elif candidates_db.get_application_for_candidate_job(candidate.id, job_id) is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="candidate already applied to this job")
-
-    anonymized_text = anonymize_applicant_text(
-        request.resume_text + "\n" + "\n".join(
-            f"{key}: {value}" for key, value in request.form_responses.items()
-        ),
-        full_name=request.full_name,
-        age=request.age,
-        gender=request.gender,
-    )
-    screening = get_ai_provider().generate_structured(
-        system_instruction=SCREENING_SYSTEM_PROMPT,
-        user_content=build_screening_user_prompt(
-            job_description=row.jd_markdown,
-            anonymized_resume_text=anonymized_text,
-            anonymized_form_responses="\n".join(
-                f"{key}: {value}" for key, value in request.form_responses.items()
-            ),
-        ),
-        response_model=ApplicationScreeningResult,
-    )
-    application = candidates_db.create_application(
-        ApplicationCreate(candidate_id=candidate.id, job_id=job_id)
-    )
-    updated = candidates_db.save_application_screening(application.id, screening)
-    if updated is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="application screening update failed")
-    return updated
+    except GoogleFormsConfigurationError as error:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error)) from error
+    except GoogleFormsIntegrationError as error:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)) from error

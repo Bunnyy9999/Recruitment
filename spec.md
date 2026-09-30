@@ -56,6 +56,8 @@ Manages specific instances of a candidate applying for a particular open positio
 - `pipeline_status`: enum (failed_at_sync, active_pipeline, pending_ceo_decision, closed_complete), default `failed_at_sync` (fail-closed until sync records its result)
 - `final_decision`: enum (pending, pass, fail) -- Human hire/reject at the end of the pipeline is CEO-only. The sync engine may still write `fail` when AI screening rejects a candidate (they are not moving forward). HR override restores `pending` so the CEO can decide later.
 - `remarks`: text -- Permanent track of human logs, rejection reasons, or why an offer was declined
+- `google_form_response_id`: string (Nullable) -- Source response ID used to make form sync idempotent per job
+- `form_responses`: jsonb -- Original question titles and answers retained for HR review
 - `created_at`: timestamp
 
 The sync operation must explicitly write the final `pipeline_status` and `final_decision` for the screening result before exposing the application: pass maps to `active_pipeline`/`pending`; fail maps to `failed_at_sync`/`fail`.
@@ -94,11 +96,11 @@ Google Forms settings read `GOOGLE_SERVICE_ACCOUNT_FILE` from the environment; r
 4. **Post and Form Link**: The backend obtains the copied form's responder URL, stores the form ID/URL on the job, and includes that URL in the generated LinkedIn/job post. HR reviews the post before publishing it. The post must link to the newly copied job-specific form, not the template form.
 
 ### Phase 2: Per-Job Ingestion, Integrated AI Evaluation, and History Check
-1. **The Sync Execution Loop**: HR opens a specific Job Dashboard and clicks "Start Sync". The backend polls the linked form answers.
+1. **The Sync Execution Loop**: HR opens a specific Job Dashboard and clicks "Sync all applicants". The backend retrieves every page of responses from that job's linked Google Form, maps each answer to its question title, and processes each response independently. The cloned form includes required name and email questions unless the template or generated questions already provide them. Uploaded PDF resumes are downloaded as binary media from Drive and their text is extracted for screening; the backend does not retain a local résumé copy. Original answers remain attached to the application for HR review. A response already stored for the same job is skipped on later syncs.
 2. **Identity Verification & Cross-Referencing**:
    - The engine checks incoming records against the global `candidates` data indices (`email`, `phone`, or `linkedin_url`).
    - **Scenario A (New Applicant)**: Initializes a row in `candidates` and maps a fresh entry to `applications`.
-   - **Scenario B (Returning Candidate, New Job)**: Detects a global profile match but confirms no entry exists for this new `job_id`. It spins up a new application pointer. The user interface instantly pulls historical sibling applications to show a log of previous job names, past statuses, and reasons for rejection.
+   - **Scenario B (Returning Candidate, New Job)**: Detects a global profile match but confirms no entry exists for this new `job_id`. It spins up a new application pointer. The user interface pulls historical sibling applications to show previous job names, stages, statuses, decisions, AI screening summaries, and any human remarks. AI screening summaries and human remarks are displayed separately.
    - **Scenario C (Duplicate Applicant, Same Job)**: Identifies an application matching both `candidate_id` and `job_id`. The engine blocks the operation to prevent entry redundancy.
 3. **The Combined Evaluation Branch**:
    - Programmatic filters replace supplied candidate names, ages, and genders with neutral markers prior to LLM evaluation, preserving unrelated experience text.
@@ -118,7 +120,9 @@ Google Forms settings read `GOOGLE_SERVICE_ACCOUNT_FILE` from the environment; r
    - The backend validates the interview/application association, sanitizes path segments, saves the file, and verifies the saved file and database path. The directory date is the date the interview took place; the filename includes the round number:
      `./backend/recordings/{job_title}/{candidate_name}/{interview_date_YYYYMMDD}/technical_interview_{sequence_order}.mp3`
    - A round's sequence number is unique within its application, preventing one recording from overwriting another round's file. The database stores `scheduled_at`, `sequence_order`, `local_audio_path`, status, and human feedback.
+   - HR may remove any scheduled or completed round from the application. Deletion removes the database row, deletes the associated local recording if present, and reindexes the remaining rounds so `sequence_order` remains contiguous.
 4. **Recording Verification**: The UI shows whether the recording exists at its expected local path. Audio contents are not transcribed, chunked, converted, or analyzed by AI.
+5. **Jobs Dashboard Overview**: The application includes a portfolio dashboard that lists all jobs as cards with status and lets HR select a job to review the full applicant list. Each job view supports result filters for pass, fail, pending, and search by name/email/application ID.
 
 ### Phase 4: Final Executive Determination
 1. **Closing Review Hand-off**: Once all technical interview records are marked `complete`, HR moves the candidate to the `ceo_review` tracking phase.
@@ -142,12 +146,15 @@ All paths are relative to `BACKEND_API_URL` (never hardcoded). JSON unless noted
 | POST | `/api/v1/jobs/{job_id}/linkedin-blurb` | hr | Generate reviewed marketing/job post containing the persisted form responder URL |
 | POST | `/api/v1/jobs/{job_id}/sync` | hr | Ingest form answers + AI pass/fail |
 | GET | `/api/v1/jobs/{job_id}/applications` | hr, staff | Applications for one job (optional `pipeline_status` filter) |
-| GET | `/api/v1/candidates/{candidate_id}/history` | hr, staff | Sibling applications for returning candidates |
+| GET | `/api/v1/candidates/{candidate_id}/history` | hr, staff | Sibling applications with screening summaries and human remarks |
 | POST | `/api/v1/applications/{application_id}/hr-override` | hr | Fail pool → `active_pipeline`, `final_decision=pending` |
 | POST | `/api/v1/applications/{application_id}/move-to-ceo` | hr | After interviews complete → `ceo_review` |
 | GET | `/api/v1/applications/{application_id}/dossier` | staff, hr | CEO synthesis payload |
 | POST | `/api/v1/applications/{application_id}/final-decision` | staff (CEO) | Lock `final_decision` pass/fail + remarks |
 | GET | `/api/v1/applications/{application_id}/interviews` | hr, staff | Numbered interview rounds for the application, in sequence order |
 | POST | `/api/v1/applications/{application_id}/interviews` | hr | Schedule the next numbered interview round |
+| DELETE | `/api/v1/interviews/{interview_id}` | hr | Remove a round and reindex remaining interview sequence numbers |
 | POST | `/api/v1/interviews/{interview_id}/recording` | hr | Multipart upload for that round → sequence-numbered local recording path |
 | PATCH | `/api/v1/interviews/{interview_id}` | hr, staff | Feedback / mark complete |
+
+The sync endpoint takes no applicant payload and returns a `FormSyncResult` with per-response `synced`, `duplicate`, or `error` outcomes. The application list includes candidate name, email, phone, screening summary, and original `form_responses` for the HR result table and selected-applicant detail view. The template's `Contact Number` answer is mapped to the candidate phone field. Candidate history includes both `screening_summary` and `remarks`; the latter is human-authored and is written through the CEO final-decision action, while interview feedback remains attached to interview rounds. The sync results table reports the latest run, while the applicant table reports persisted applications for the selected job. Generated JD and LinkedIn content is shown in its editor immediately after generation. Only response sync requires the `forms.responses.readonly` scope; OAuth users with older tokens are prompted to re-consent when they first run sync. Form cloning continues to use Drive and Forms body scopes.

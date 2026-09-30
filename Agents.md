@@ -23,7 +23,7 @@ An internal recruitment prototype utilizing a human-in-the-loop architecture. AI
 ## Core Architectural Rules & Constraints
 1. **Multi-Key Candidate Matching**: Candidates are uniquely identified globally across the platform by a combined lookup of `email`, `phone`, and `linkedin_url`. 
 2. **Job-Level Deduplication Constraint**: Candidates are fully permitted to apply to multiple distinct job vacancies over time. However, duplicate entries for the *same job* are strictly blocked. 
-3. **Historical Data Assembly**: When an existing candidate profile applies to a new job, the engine hooks their global `candidate_id` and instantly fetches all sister records from the application tracking tables to expose historical job names, past milestones reached, and human rejection or offer remarks.
+3. **Historical Data Assembly**: When an existing candidate profile applies to a new job, the engine hooks their global `candidate_id` and fetches sibling applications to expose previous job names, stages, statuses, decisions, AI screening summaries, and human remarks. Keep AI screening summaries separate from human-authored remarks.
 4. **Automated Screening & Failure Cascade**: On synchronization, the AI screening agent outputs an advisory status (`pass` or `fail`).
    - An AI `pass` advances the application directly into the active scheduling pipeline (`pipeline_status = active_pipeline`, `final_decision = pending`).
    - An AI `fail` immediately drops the candidate with `pipeline_status = failed_at_sync` (never `failed_at_screening`) and `final_decision = fail`, because they are not moving forward unless HR changes it.
@@ -31,6 +31,8 @@ An internal recruitment prototype utilizing a human-in-the-loop architecture. AI
 6. **CEO Ultimate Sign-off**: `final_decision` hire/reject after interviews is strictly a CEO dashboard action. System-written `fail` on AI screening (and HR restoring `pending` on override) are the only non-CEO mutations of that column.
 7. **Localized Recording Volume**: Each recording belongs to a scheduled interview round for a job application and is stored and verified on disk, without audio processing, as  
    `{RECORDINGS_DIR}/{job_title}/{candidate_name}/{interview_date_YYYYMMDD}/technical_interview_{sequence_order}.mp3` (default root: `./backend/recordings`)
+8. **Google Forms Batch Sync**: HR syncs a job's linked form as a batch. Read every response page, map answers by question title, download PDF resumes as binary media from Drive, and extract text for screening. Do not save a local résumé copy. Persist original answers for HR review, map the template's `Contact Number` answer to candidate phone, and anonymize candidate name and email in AI-bound text. Store the response ID to make repeated syncs idempotent, and preserve global identity matching and same-job application uniqueness.
+9. **Human Remarks**: `applications.remarks` contains human-authored rationale, not the AI screening summary. The CEO final-decision action writes final remarks; screening summaries remain in `screening_summary` and are displayed separately in candidate history.
 
 ## Core Commands
 ### Container Orchestration

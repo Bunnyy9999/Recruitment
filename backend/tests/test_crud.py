@@ -16,10 +16,13 @@ from backend.app.database.crud.errors import (
 )
 from backend.app.schemas.candidates_schema import (
     ApplicationCreate,
+    ApplicationApplicantRead,
     ApplicationDashboardRecord,
     CandidateCreate,
     CandidateIdentityLookup,
+    ApplicationScreeningResult,
     PipelineStatus,
+    ScreeningDecision,
 )
 from backend.app.schemas.interviews_schema import (
     InterviewRecordingResult,
@@ -49,6 +52,10 @@ class FakeQuery:
 
     def update(self, values: dict[str, object]) -> "FakeQuery":
         self.client.events.append((self.table_name, "update", values))
+        return self
+
+    def delete(self) -> "FakeQuery":
+        self.client.events.append((self.table_name, "delete"))
         return self
 
     def eq(self, column: str, value: object) -> "FakeQuery":
@@ -308,6 +315,78 @@ class CandidateCrudTests(TestCase):
 
         self.assertEqual(application.id, row["id"])
 
+    def test_get_application_for_form_response(self) -> None:
+        row = application_row()
+        row["google_form_response_id"] = "forms-response-1"
+        row["form_responses"] = {"Experience": "8 years"}
+        client = FakeSupabaseClient([[row]])
+
+        with patch.object(candidates_db, "supabase_client", client):
+            application = candidates_db.get_application_for_form_response(
+                row["job_id"], "forms-response-1"
+            )
+
+        self.assertEqual(application.google_form_response_id, "forms-response-1")
+        self.assertIn(
+            ("applications", "eq", "google_form_response_id", "forms-response-1"),
+            client.events,
+        )
+
+    def test_list_job_applications_includes_candidate_and_form_answers(self) -> None:
+        row = application_row()
+        candidate = candidate_row(row["candidate_id"])
+        row["google_form_response_id"] = "forms-response-1"
+        row["form_responses"] = {"Experience": "8 years"}
+        row["candidates"] = {
+            "full_name": candidate["full_name"],
+            "email": candidate["email"],
+            "phone": candidate["phone"],
+        }
+        client = FakeSupabaseClient([[row]])
+
+        with patch.object(candidates_db, "supabase_client", client):
+            applications = candidates_db.list_job_applications(row["job_id"])
+
+        self.assertIsInstance(applications[0], ApplicationApplicantRead)
+        self.assertEqual(applications[0].candidate_name, "Alex Doe")
+        self.assertEqual(applications[0].email, "alex@example.com")
+        self.assertEqual(applications[0].phone, "+15551234567")
+        self.assertEqual(applications[0].form_responses, {"Experience": "8 years"})
+        self.assertIn(
+            ("applications", "select", "*, candidates(full_name,email,phone)"),
+            client.events,
+        )
+
+    def test_create_screened_application_saves_answers_and_response_id(self) -> None:
+        row = application_row()
+        row.update(
+            {
+                "google_form_response_id": "forms-response-1",
+                "form_responses": {"Experience": "8 years"},
+                "agent_decision": "pass",
+                "screening_summary": "Evidence supports the required experience.",
+                "pipeline_status": "active_pipeline",
+                "final_decision": "pending",
+            }
+        )
+        client = FakeSupabaseClient([[row]])
+
+        with patch.object(candidates_db, "supabase_client", client):
+            application = candidates_db.create_screened_application(
+                ApplicationCreate(candidate_id=row["candidate_id"], job_id=row["job_id"]),
+                response_id="forms-response-1",
+                form_responses={"Experience": "8 years"},
+                screening=ApplicationScreeningResult(
+                    agent_decision=ScreeningDecision.passed,
+                    screening_summary="Evidence supports the required experience.",
+                ),
+            )
+
+        insert_event = next(event for event in client.events if event[1] == "insert")
+        self.assertEqual(insert_event[2]["google_form_response_id"], "forms-response-1")
+        self.assertEqual(insert_event[2]["form_responses"], {"Experience": "8 years"})
+        self.assertEqual(application.pipeline_status, PipelineStatus.active_pipeline)
+
 
     def test_candidate_history_flattens_related_job_title(self) -> None:
         candidate_id = uuid4()
@@ -319,6 +398,7 @@ class CandidateCrudTests(TestCase):
             "pipeline_status": "active_pipeline",
             "final_decision": "pending",
             "remarks": None,
+            "screening_summary": "Evidence did not meet the required criteria.",
             "created_at": datetime(2026, 9, 29, tzinfo=timezone.utc),
             "jobs": {"title": "Data Engineer"},
         }
@@ -329,6 +409,10 @@ class CandidateCrudTests(TestCase):
 
         self.assertEqual(history[0].job_title, "Data Engineer")
         self.assertEqual(history[0].job_id, job_id)
+        self.assertEqual(
+            history[0].screening_summary,
+            "Evidence did not meet the required criteria.",
+        )
 
     def test_dashboard_view_rows_are_validated(self) -> None:
         app = application_row()
@@ -457,6 +541,18 @@ class InterviewCrudTests(TestCase):
         update_event = next(event for event in client.events if event[1] == "update")
         self.assertEqual(update_event[2], {"feedback": "Clear explanation."})
         self.assertEqual(interview.feedback, "Clear explanation.")
+
+    def test_delete_round_removes_and_reindexes_sequence(self) -> None:
+        application_id = uuid4()
+        row = interview_row(application_id, sequence_order=2)
+        row["local_audio_path"] = None
+        client = FakeSupabaseClient([[row], [{"id": row["id"]}], []])
+
+        with patch.object(interviews_db, "supabase_client", client):
+            deleted = interviews_db.delete_interview_round(row["id"])
+
+        self.assertTrue(deleted)
+        self.assertIn(("interviews", "delete"), client.events)
 
     def test_recording_reference_requires_verified_file(self) -> None:
         result = InterviewRecordingResult(

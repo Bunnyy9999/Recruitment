@@ -2,7 +2,12 @@
 
 ## Current Status
 
-Stages 1–3 and Stage 4 are complete: the database migration was applied to Supabase; Pydantic schemas, local recording/anonymization utilities, centralized prompts, the provider-neutral Gemini adapter, tested Supabase CRUD modules, Google Forms integration, local-media service wrapper, and FastAPI feature routes are implemented.
+Stages 1–3 and Stage 4 are complete: the database migration was applied to Supabase; Pydantic schemas, local recording/anonymization utilities, centralized prompts, the provider-neutral Gemini adapter, tested Supabase CRUD modules, Google Forms integration, local-media service wrapper, FastAPI feature routes, and the portfolio jobs dashboard are implemented.
+
+### New additions
+- A jobs dashboard page now lists every hiring requisition as a status card and lets HR drill into applicant details for the selected job.
+- Applicant views support filters for pass, fail, pending, and free-text search by name, email, or application ID.
+- HR can remove any interview round from a candidate’s pipeline; the remaining rounds are automatically reindexed to keep sequence numbers contiguous.
 
 ## 1. Database Foundation
 
@@ -26,7 +31,7 @@ Schemas are in `backend/app/schemas/` and use Pydantic v2. They reject unknown f
 - Interview scheduling requires a timezone-aware date and time. The server assigns round numbers and local paths; clients cannot supply them. Round numbers must be positive.
 - Interview updates must include at least one field. No schema accepts transcript or audio-analysis data.
 
-Invalid schema input raises a Pydantic `ValidationError`. When these models are connected to FastAPI routes, FastAPI will report invalid request data as HTTP 422; the routes are planned for a later stage.
+Invalid schema input raises a Pydantic `ValidationError`; FastAPI returns HTTP 422 for invalid request data.
 
 ## 3. Local Interview Recordings
 
@@ -90,10 +95,24 @@ Run from the repository root using the backend virtual environment:
 .\backend\.venv\Scripts\python.exe -m unittest discover -s .\backend\tests -v
 ```
 
-The FastAPI foundation exposes `GET /health`, returning the Pydantic response `{"status":"ok"}` without checking Supabase, Google, or Gemini credentials. The app mounts the `/api/v1` router, which is reserved for the feature endpoints in Phase 4.2.
+The frontend is also started from the backend venv environment when using this project setup:
 
-Latest result: **78 tests passed**. Python syntax checks and editor diagnostics were also clean. CRUD behavior was tested with a fake client; no live Supabase, Gemini, or Google API request was made. Starlette emits a deprecation warning that its TestClient's current HTTPX integration will change; tests pass, and this is limited to the test client transport.
+```powershell
+.\backend\.venv\Scripts\python.exe -m streamlit run frontend\main.py --server.port 8502
+```
 
-## Not Implemented Yet
+The FastAPI app exposes `GET /health` and the implemented feature routes under `/api/v1`, including jobs, form sync, candidate history, interviews, and final decisions.
 
-The backend feature routes and local Streamlit multipage frontend are implemented. Interview audio remains local-only and is never transcribed or analyzed. Live external integrations and Supabase/RLS behavior still need environment-backed smoke tests. Docker remains intentionally deferred.
+Latest result: **92 tests passed**. CRUD behavior is tested with fake clients. The local app has also successfully generated Gemini content and synced a PDF submission from Google Forms. Starlette emits a deprecation warning about its current HTTPX test-client integration; tests pass, and this is limited to the test client transport.
+
+## Remaining Work
+
+Interview audio remains local-only and is never transcribed or analyzed. Supabase/RLS behavior still needs environment-backed smoke testing. Docker remains intentionally deferred.
+
+## 9. Automatic Google Forms Sync
+
+The HR sync action now retrieves all response pages from the job-specific Google Form. Each response is mapped to question titles, uploaded PDFs are downloaded from Drive using the binary media API, and the résumé plus all answers are screened independently. PDFs remain in Drive; they are not saved locally. Required name/email fields are added when cloning a form if the template/generated questions do not already collect them. Original answers are saved on the application, the template's `Contact Number` answer maps to candidate phone, and name/email are redacted from AI-bound screening text.
+
+The application table stores each Forms response ID with a per-job unique index, so repeat syncs skip previously imported responses. Global email/phone/LinkedIn matching and the `(candidate_id, job_id)` unique constraint continue to enforce cross-job identity and same-job non-redundancy. The applicant table shows name, email, phone, screening outcome, and summary; selecting a row shows the full original answers and prior applications. History displays AI screening summaries separately from human remarks; CEO final-decision remarks are human-authored. Generated JD and LinkedIn content is copied into its editor immediately after generation.
+
+Migration `supabase/migrations/20260930000000_add_form_submission_data.sql` was applied to the configured Supabase project. Only response sync requires `forms.responses.readonly`; OAuth users with older tokens are prompted to re-consent when they first sync, while form cloning continues with Drive and Forms body scopes. The full backend suite passes 92 tests, and the local app has successfully synced and screened a PDF submission.

@@ -49,6 +49,13 @@ def update_interview_route(
     return row
 
 
+@router.delete("/interviews/{interview_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_interview_route(interview_id: UUID) -> None:
+    if not interviews_db.delete_interview_round(interview_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="interview not found")
+    return None
+
+
 @router.post("/interviews/{interview_id}/recording", response_model=InterviewRoundRead)
 def upload_recording_route(
     interview_id: UUID,

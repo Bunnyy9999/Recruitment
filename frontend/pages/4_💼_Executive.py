@@ -20,7 +20,11 @@ eligible = [item for item in applications if item.get("pipeline_status") in {"ac
 if not eligible:
     st.info("No candidates are ready for executive review.")
     st.stop()
-app = eligible[st.selectbox("Applicant", eligible, format_func=lambda item: item["id"])]
+app = st.selectbox(
+    "Applicant",
+    options=eligible,
+    format_func=lambda item: f"{item.get('candidate_name') or 'Unknown'} — {item.get('email') or 'no email'}",
+)
 dossier = safe_api(lambda: get_json(f"/api/v1/applications/{app['id']}/dossier"))
 if dossier:
     application = dossier["application"]

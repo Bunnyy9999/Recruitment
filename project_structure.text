@@ -70,7 +70,8 @@ dataropes-recruitment-tool/
 │       │   │   ├── base.py       # Shared provider contract used by business logic
 │       │   │   └── gemini_flash.py# Gemini Flash adapter; requests are stateless and output is Pydantic-validated
 │       │   ├── supabase_service.py# Lazy Supabase client using SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
-│       │   ├── google_forms.py   # Drive template cloning and typed Forms API updates
+│       │   ├── google_forms.py   # Drive template cloning, Forms response listing, and typed Forms API updates
+│       │   ├── form_sync_service.py # Paginated response sync, screening, identity matching, and answer persistence
 │       │   └── local_media_service.py# Interview-round recording storage/verification wrapper
 │       │
 │       ├── utils/                # Helper libraries
@@ -80,4 +81,5 @@ dataropes-recruitment-tool/
 │
 └── supabase/                     # Local Schema Migrations Tracking
     └── migrations/
-        └── 20260928000000_init_recruitment_schema.sql  # Database initialization script
+        ├── 20260928000000_init_recruitment_schema.sql  # Database initialization script
+        └── 20260930000000_add_form_submission_data.sql # Form answers and response idempotency

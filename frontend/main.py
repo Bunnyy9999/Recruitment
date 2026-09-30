@@ -45,6 +45,7 @@ def command_center() -> None:
 
 pages = {
     "Command center": st.Page(command_center, title="Command center", icon="📊", url_path="command-center"),
+    "Jobs Dashboard": st.Page("pages/0_🏢_Jobs_Dashboard.py", title="Jobs Dashboard", icon="🏢"),
     "Hiring Request": st.Page("pages/1_🎯_Hiring_Request.py", title="Hiring Request", icon="🎯"),
     "Sync & Screen": st.Page("pages/2_🔄_Sync_&_Screen.py", title="Sync & Screen", icon="🔄"),
     "Interviews": st.Page("pages/3_🎙️_Interviews.py", title="Interviews", icon="🎙️"),

@@ -8,6 +8,7 @@ from backend.app.database.crud.errors import (
 from backend.app.schemas.candidates_schema import (
     ApplicationCreate,
     ApplicationDashboardRecord,
+    ApplicationApplicantRead,
     ApplicationRead,
     CandidateCreate,
     CandidateHistoryRecord,
@@ -126,13 +127,29 @@ def get_application_for_candidate_job(
     )
     return ApplicationRead.model_validate(rows[0]) if rows else None
 
+def get_application_for_form_response(
+    job_id: UUID,
+    response_id: str,
+) -> ApplicationRead | None:
+    rows = execute_query(
+        supabase_client.table("applications")
+        .select("*")
+        .eq("job_id", str(job_id))
+        .eq("google_form_response_id", response_id)
+        .limit(1),
+        operation="get application for form response",
+    )
+    return ApplicationRead.model_validate(rows[0]) if rows else None
+
 
 def list_job_applications(
     job_id: UUID,
     *,
     pipeline_status: PipelineStatus | None = None,
-) -> list[ApplicationRead]:
-    query = supabase_client.table("applications").select("*").eq(
+) -> list[ApplicationApplicantRead]:
+    query = supabase_client.table("applications").select(
+        "*, candidates(full_name,email,phone)"
+    ).eq(
         "job_id", str(job_id)
     )
     if pipeline_status is not None:
@@ -141,14 +158,31 @@ def list_job_applications(
         query.order("created_at", desc=True),
         operation="list job applications",
     )
-    return [ApplicationRead.model_validate(row) for row in rows]
+    applications: list[ApplicationApplicantRead] = []
+    for row in rows:
+        candidate = row.pop("candidates", None)
+        if isinstance(candidate, list):
+            candidate = candidate[0] if candidate else None
+        if not isinstance(candidate, dict):
+            raise DatabaseOperationError("job application row is missing candidate data")
+        applications.append(
+            ApplicationApplicantRead.model_validate(
+                {
+                    **row,
+                    "candidate_name": candidate.get("full_name"),
+                    "email": candidate.get("email"),
+                    "phone": candidate.get("phone"),
+                }
+            )
+        )
+    return applications
 
 
 def get_candidate_history(candidate_id: UUID) -> list[CandidateHistoryRecord]:
     rows = execute_query(
         supabase_client.table("applications")
         .select(
-            "id,job_id,current_stage,pipeline_status,final_decision,remarks,created_at,jobs(title)"
+            "id,job_id,current_stage,pipeline_status,final_decision,remarks,screening_summary,created_at,jobs(title)"
         )
         .eq("candidate_id", str(candidate_id))
         .order("created_at", desc=True),
@@ -171,6 +205,7 @@ def get_candidate_history(candidate_id: UUID) -> list[CandidateHistoryRecord]:
                     "pipeline_status": row["pipeline_status"],
                     "final_decision": row["final_decision"],
                     "remarks": row.get("remarks"),
+                    "screening_summary": row.get("screening_summary"),
                     "created_at": row["created_at"],
                 }
             )
@@ -261,6 +296,35 @@ def save_application_screening(
         operation="save application screening",
     )
     return ApplicationRead.model_validate(rows[0]) if rows else None
+
+def create_screened_application(
+    application: ApplicationCreate,
+    *,
+    response_id: str,
+    form_responses: dict[str, str],
+    screening: ApplicationScreeningResult,
+) -> ApplicationRead:
+    passed = screening.agent_decision is ScreeningDecision.passed
+    rows = execute_query(
+        supabase_client.table("applications")
+        .insert(
+            {
+                "candidate_id": str(application.candidate_id),
+                "job_id": str(application.job_id),
+                "google_form_response_id": response_id,
+                "form_responses": form_responses,
+                "agent_decision": screening.agent_decision.value,
+                "screening_summary": screening.screening_summary,
+                "pipeline_status": "active_pipeline" if passed else "failed_at_sync",
+                "final_decision": "pending" if passed else "fail",
+            }
+        )
+        .select("*"),
+        operation="create screened application",
+    )
+    if not rows:
+        raise DatabaseOperationError("create screened application returned no row")
+    return ApplicationRead.model_validate(rows[0])
 
 
 def save_application_screening(

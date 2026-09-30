@@ -115,6 +115,44 @@ class ApplicationRead(BaseModel):
     final_decision: FinalDecision
     remarks: str | None
     created_at: AwareDatetime
+    google_form_response_id: str | None = None
+    form_responses: dict[str, str] = Field(default_factory=dict)
+
+
+class ApplicationApplicantRead(ApplicationRead):
+    candidate_name: str
+    email: EmailStr
+    phone: str | None = None
+
+
+class FormSyncItemStatus(str, Enum):
+    synced = "synced"
+    duplicate = "duplicate"
+    error = "error"
+
+
+class FormSyncItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    response_id: str
+    candidate_name: str | None = None
+    email: EmailStr | None = None
+    application_id: UUID | None = None
+    agent_decision: ScreeningDecision | None = None
+    pipeline_status: PipelineStatus | None = None
+    screening_summary: str | None = None
+    status: FormSyncItemStatus
+    detail: str | None = None
+
+
+class FormSyncResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    total_responses: int = Field(ge=0)
+    synced: int = Field(ge=0)
+    skipped_duplicates: int = Field(ge=0)
+    errors: int = Field(ge=0)
+    items: list[FormSyncItem]
 
 
 class CandidateHistoryRecord(BaseModel):
@@ -127,6 +165,7 @@ class CandidateHistoryRecord(BaseModel):
     pipeline_status: PipelineStatus
     final_decision: FinalDecision
     remarks: str | None
+    screening_summary: str | None = None
     created_at: AwareDatetime
 
 

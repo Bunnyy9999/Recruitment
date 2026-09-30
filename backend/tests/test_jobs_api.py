@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 from backend.app.api.router import app
 from backend.app.api.v1 import jobs as jobs_router
 from backend.app.schemas.jobs_schema import JobCreate, JobPatch, JobRead, JobStatus
+from backend.app.schemas.candidates_schema import FormSyncResult
+from backend.app.services.google_forms import GoogleFormsConfigurationError
 
 
 class FakeJobsDb:
@@ -119,3 +121,54 @@ class JobsApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["linkedin_blurb"], "Apply here: https://forms.example/apply")
         provider.generate_text.assert_called_once()
+
+    def test_sync_runs_form_batch_without_manual_applicant_payload(self) -> None:
+        created = self.store.create_job(
+            JobCreate(title="Data Scientist", tech_stack="Python", seniority="Mid")
+        )
+        self.store.update_job(
+            created.id,
+            JobPatch(
+                jd_markdown="# Data Scientist",
+                google_form_id="form-id",
+                google_form_url="https://forms.example/apply",
+            ),
+        )
+        result = FormSyncResult(
+            total_responses=2,
+            synced=1,
+            skipped_duplicates=1,
+            errors=0,
+            items=[],
+        )
+
+        with patch.object(jobs_router, "GoogleFormsService") as forms_service:
+            with patch.object(jobs_router, "get_ai_provider", return_value=Mock()):
+                with patch.object(jobs_router, "sync_form_responses", return_value=result) as sync:
+                    response = self.client.post(f"/api/v1/jobs/{created.id}/sync")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["total_responses"], 2)
+        forms_service.assert_called_once()
+        sync.assert_called_once()
+
+    def test_clone_form_configuration_error_returns_service_unavailable(self) -> None:
+        created = self.store.create_job(
+            JobCreate(title="Data Scientist", tech_stack="Python", seniority="Mid")
+        )
+        with patch.object(jobs_router, "GoogleFormsService") as forms_service:
+            forms_service.return_value.clone_application_form.side_effect = (
+                GoogleFormsConfigurationError("Google client initialization failed")
+            )
+            response = self.client.post(
+                f"/api/v1/jobs/{created.id}/clone-form",
+                json={
+                    "questions": [
+                        {"title": "Describe your experience", "question_type": "paragraph"},
+                        {"title": "Which tools have you used?", "question_type": "short_text"},
+                    ]
+                },
+            )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["detail"], "Google client initialization failed")

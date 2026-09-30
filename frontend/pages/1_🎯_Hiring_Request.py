@@ -50,10 +50,16 @@ with studio_col:
             if safe_api(lambda: patch_json(f"/api/v1/jobs/{job['id']}", {"status": new_status}), success="Status saved"):
                 st.rerun()
     with tabs[1]:
-        jd = st.text_area("Editable Markdown", value=job.get("jd_markdown") or "", height=330, key=f"jd-{job['id']}")
+        jd_key = f"jd-{job['id']}"
+        pending_jd_key = f"pending-jd-{job['id']}"
+        if pending_jd_key in st.session_state:
+            st.session_state[jd_key] = st.session_state.pop(pending_jd_key)
+        jd = st.text_area("Editable Markdown", value=job.get("jd_markdown") or "", height=330, key=jd_key)
         a, b = st.columns(2)
         if a.button("Generate with Gemini", key=f"generate-{job['id']}", type="primary"):
-            if safe_api(lambda: post_json(f"/api/v1/jobs/{job['id']}/generate-jd"), success="Draft generated"):
+            generated_job = safe_api(lambda: post_json(f"/api/v1/jobs/{job['id']}/generate-jd"), success="Draft generated")
+            if generated_job:
+                st.session_state[pending_jd_key] = generated_job["jd_markdown"]
                 st.rerun()
         if b.button("Save edits", key=f"save-jd-{job['id']}"):
             safe_api(lambda: patch_json(f"/api/v1/jobs/{job['id']}", {"jd_markdown": jd}), success="Job description saved")
@@ -64,6 +70,11 @@ with studio_col:
             generated = safe_api(lambda: post_json(f"/api/v1/jobs/{job['id']}/generate-form-questions"), success="Questions created")
             if generated:
                 st.session_state[questions_key] = generated["questions"]
+                for index, question in enumerate(generated["questions"]):
+                    st.session_state[f"question-title-{job['id']}-{index}"] = question["title"]
+                    st.session_state[f"question-type-{job['id']}-{index}"] = question["question_type"]
+                    st.session_state[f"question-required-{job['id']}-{index}"] = question.get("required", True)
+                    st.session_state[f"question-options-{job['id']}-{index}"] = "\n".join(question.get("options", []))
                 st.rerun()
 
         questions = st.session_state.get(questions_key, [])
@@ -112,10 +123,16 @@ with studio_col:
         elif not questions:
             st.info("Create questions to begin.")
     with tabs[3]:
-        blurb = st.text_area("Reviewed post copy", value=job.get("linkedin_blurb") or "", height=260, key=f"blurb-{job['id']}")
+        blurb_key = f"blurb-{job['id']}"
+        pending_blurb_key = f"pending-blurb-{job['id']}"
+        if pending_blurb_key in st.session_state:
+            st.session_state[blurb_key] = st.session_state.pop(pending_blurb_key)
+        blurb = st.text_area("Reviewed post copy", value=job.get("linkedin_blurb") or "", height=260, key=blurb_key)
         a, b = st.columns(2)
         if a.button("Generate post", key=f"blurb-generate-{job['id']}", type="primary"):
-            if safe_api(lambda: post_json(f"/api/v1/jobs/{job['id']}/linkedin-blurb"), success="Post draft generated"):
+            generated_job = safe_api(lambda: post_json(f"/api/v1/jobs/{job['id']}/linkedin-blurb"), success="Post draft generated")
+            if generated_job:
+                st.session_state[pending_blurb_key] = generated_job["linkedin_blurb"]
                 st.rerun()
         if b.button("Save post edits", key=f"blurb-save-{job['id']}"):
             safe_api(lambda: patch_json(f"/api/v1/jobs/{job['id']}", {"linkedin_blurb": blurb}), success="Post copy saved")

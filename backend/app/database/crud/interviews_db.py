@@ -113,3 +113,54 @@ def save_recording_reference(
         operation="save verified recording reference",
     )
     return InterviewRoundRead.model_validate(updated[0]) if updated else None
+
+
+def delete_interview_round(interview_id: UUID) -> bool:
+    current = execute_query(
+        supabase_client.table("interviews")
+        .select("*")
+        .eq("id", str(interview_id))
+        .limit(1),
+        operation="load interview round for deletion",
+    )
+    if not current:
+        return False
+
+    interview = InterviewRoundRead.model_validate(current[0])
+    if interview.local_audio_path:
+        try:
+            audio_path = Path(interview.local_audio_path)
+            if audio_path.exists() and audio_path.is_file():
+                audio_path.unlink()
+        except OSError:
+            pass
+
+    deleted = execute_query(
+        supabase_client.table("interviews")
+        .delete()
+        .eq("id", str(interview_id))
+        .select("id"),
+        operation="delete interview round",
+    )
+    if not deleted:
+        return False
+
+    remaining = execute_query(
+        supabase_client.table("interviews")
+        .select("*")
+        .eq("application_id", str(interview.application_id))
+        .order("sequence_order"),
+        operation="fetch remaining interview rounds for reindexing",
+    )
+    for index, row in enumerate(remaining, start=1):
+        if row["sequence_order"] == index:
+            continue
+        execute_query(
+            supabase_client.table("interviews")
+            .update({"sequence_order": index})
+            .eq("id", str(row["id"]))
+            .select("*"),
+            operation="reindex interview round sequence",
+        )
+
+    return True

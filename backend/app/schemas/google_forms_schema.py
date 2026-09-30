@@ -63,3 +63,22 @@ class GoogleFormCloneResult(BaseModel):
     responder_url: AnyHttpUrl
     editor_url: AnyHttpUrl
     questions_added: int = Field(ge=1)
+
+
+class GoogleFormUploadedFile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    file_id: str = Field(min_length=1)
+    file_name: str = Field(min_length=1)
+    mime_type: str | None = None
+
+
+class GoogleFormSubmission(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    response_id: str = Field(min_length=1)
+    applicant_name: str | None = None
+    email: str | None = None
+    answers: dict[str, str]
+    resume_files: list[GoogleFormUploadedFile]
+    submitted_at: str | None = None
