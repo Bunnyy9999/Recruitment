@@ -127,6 +127,40 @@ def get_application_for_candidate_job(
     )
     return ApplicationRead.model_validate(rows[0]) if rows else None
 
+
+def get_application_for_job_identity(
+    job_id: UUID,
+    identity: CandidateIdentityLookup,
+) -> ApplicationRead | None:
+    candidate_ids: set[str] = set()
+    keys: list[tuple[str, str, bool]] = []
+    if identity.email is not None:
+        keys.append(("email", str(identity.email).lower(), True))
+    if identity.phone is not None:
+        keys.append(("phone", identity.phone, False))
+    if identity.linkedin_url is not None:
+        keys.append(("linkedin_url", str(identity.linkedin_url).rstrip("/"), False))
+
+    for column, value, case_insensitive in keys:
+        query = supabase_client.table("candidates").select("id")
+        query = query.ilike(column, value) if case_insensitive else query.eq(column, value)
+        rows = execute_query(query, operation="match duplicate applicant identity")
+        candidate_ids.update(str(row["id"]) for row in rows)
+
+    if not candidate_ids:
+        return None
+
+    rows = execute_query(
+        supabase_client.table("applications")
+        .select("*")
+        .eq("job_id", str(job_id))
+        .in_("candidate_id", sorted(candidate_ids))
+        .limit(1),
+        operation="find same-job application by identity",
+    )
+    return ApplicationRead.model_validate(rows[0]) if rows else None
+
+
 def get_application_for_form_response(
     job_id: UUID,
     response_id: str,
@@ -174,6 +208,25 @@ def list_job_applications(
                     "phone": candidate.get("phone"),
                 }
             )
+        )
+
+    candidate_ids = sorted({str(application.candidate_id) for application in applications})
+    candidates_with_other_applications: set[str] = set()
+    if candidate_ids:
+        other_job_rows = execute_query(
+            supabase_client.table("applications")
+            .select("candidate_id")
+            .in_("candidate_id", candidate_ids)
+            .neq("job_id", str(job_id)),
+            operation="list candidate applications for other jobs",
+        )
+        candidates_with_other_applications = {
+            str(row["candidate_id"]) for row in other_job_rows
+        }
+
+    for application in applications:
+        application.has_other_applications = (
+            str(application.candidate_id) in candidates_with_other_applications
         )
     return applications
 

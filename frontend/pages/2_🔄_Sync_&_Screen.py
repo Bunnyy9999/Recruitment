@@ -2,6 +2,8 @@ import streamlit as st
 
 from ui import apply_styles, fmt_status, get_json, job_options, post_json, safe_api, status_badge
 
+APPLICANTS_PER_PAGE = 20
+
 apply_styles()
 
 
@@ -41,21 +43,26 @@ with sync_col:
                 f"{result['synced']} synced, {result['skipped_duplicates']} duplicates, "
                 f"{result['errors']} errors."
             )
-            if result.get("items"):
+            new_applications = [
+                item for item in result.get("items", [])
+                if item.get("status") == "synced"
+            ]
+            if new_applications:
                 st.dataframe(
                     [
                         {
                             "Applicant": item.get("candidate_name") or "Unknown applicant",
                             "Email": item.get("email") or "",
-                            "Result": fmt_status(item.get("agent_decision")),
-                            "Sync": fmt_status(item.get("status")),
-                            "Details": item.get("detail") or item.get("screening_summary") or "",
+                            "Screening": fmt_status(item.get("agent_decision")),
+                            "Summary": item.get("screening_summary") or "",
                         }
-                        for item in result["items"]
+                        for item in new_applications
                     ],
                     hide_index=True,
                     use_container_width=True,
                 )
+            else:
+                st.info("No new applications were added in this sync.")
 
 with filter_col:
     st.subheader("Applicant results")
@@ -65,6 +72,15 @@ with filter_col:
         default="All",
         key=f"screening-filter-{job['id']}",
     )
+    history_filter = st.selectbox(
+        "Other job applications",
+        options=[
+            "All applicants",
+            "Has applications for other jobs",
+            "No applications for other jobs",
+        ],
+        key=f"application-history-filter-{job['id']}",
+    )
     search = st.text_input("Search applicants", placeholder="Name, email, or application ID")
 
 applications = safe_api(lambda: get_json(f"/api/v1/jobs/{job['id']}/applications")) or []
@@ -72,6 +88,10 @@ if selected_filter == "Pass":
     applications = [item for item in applications if item.get("agent_decision") == "pass"]
 elif selected_filter == "Fail":
     applications = [item for item in applications if item.get("agent_decision") == "fail"]
+if history_filter == "Has applications for other jobs":
+    applications = [item for item in applications if item.get("has_other_applications")]
+elif history_filter == "No applications for other jobs":
+    applications = [item for item in applications if not item.get("has_other_applications")]
 if search.strip():
     needle = search.strip().casefold()
     applications = [
@@ -90,6 +110,39 @@ if not applications:
     st.info("No applicants match this view.")
     st.stop()
 
+page_state_key = f"applicant-page-{job['id']}"
+page_count = (len(applications) + APPLICANTS_PER_PAGE - 1) // APPLICANTS_PER_PAGE
+page_index = min(max(st.session_state.get(page_state_key, 0), 0), page_count - 1)
+st.session_state[page_state_key] = page_index
+previous_col, page_info_col, next_col = st.columns([1, 2, 1])
+with previous_col:
+    if st.button(
+        "Previous",
+        disabled=page_index == 0,
+        key=f"applicants-previous-{job['id']}",
+        use_container_width=True,
+    ):
+        st.session_state[page_state_key] = page_index - 1
+        st.rerun()
+with page_info_col:
+    first_applicant = page_index * APPLICANTS_PER_PAGE + 1
+    last_applicant = min((page_index + 1) * APPLICANTS_PER_PAGE, len(applications))
+    st.caption(
+        f"Applicants {first_applicant}-{last_applicant} of {len(applications)} · "
+        f"Page {page_index + 1} of {page_count}"
+    )
+with next_col:
+    if st.button(
+        "Next",
+        disabled=page_index >= page_count - 1,
+        key=f"applicants-next-{job['id']}",
+        use_container_width=True,
+    ):
+        st.session_state[page_state_key] = page_index + 1
+        st.rerun()
+
+page_start = page_index * APPLICANTS_PER_PAGE
+page_applications = applications[page_start : page_start + APPLICANTS_PER_PAGE]
 table_rows = [
     {
         "Applicant": item.get("candidate_name", "Unknown applicant"),
@@ -97,9 +150,10 @@ table_rows = [
         "Phone": applicant_phone(item),
         "Screening": fmt_status(item.get("agent_decision")),
         "Pipeline": fmt_status(item.get("pipeline_status")),
+        "Other jobs": "Yes" if item.get("has_other_applications") else "No",
         "Summary": item.get("screening_summary") or "No screening summary",
     }
-    for item in applications
+    for item in page_applications
 ]
 table_event = st.dataframe(
     table_rows,
@@ -107,9 +161,10 @@ table_event = st.dataframe(
     use_container_width=True,
     on_select="rerun",
     selection_mode="single-row",
+    key=f"applicant-table-{job['id']}-{page_index}",
 )
 selected_rows = table_event.selection.rows
-selected_application = applications[selected_rows[0]] if selected_rows else None
+selected_application = page_applications[selected_rows[0]] if selected_rows else None
 
 if selected_application:
     st.divider()

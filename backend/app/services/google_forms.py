@@ -191,7 +191,10 @@ class GoogleFormsService:
         if not isinstance(form_id, str) or not form_id.strip():
             raise ValueError("form_id must be a non-empty string")
         configuration = self._settings_provider()
-        drive_service, forms_service = self._get_services(configuration)
+        drive_service, forms_service = self._get_services(
+            configuration,
+            scopes=(*_GOOGLE_SCOPES, _GOOGLE_RESPONSES_SCOPE),
+        )
         del drive_service
         try:
             form = forms_service.forms().get(formId=form_id).execute()
@@ -199,7 +202,7 @@ class GoogleFormsService:
             submissions: list[GoogleFormSubmission] = []
             page_token: str | None = None
             while True:
-                request: dict[str, object] = {"formId": form_id, "pageSize": 500}
+                request: dict[str, object] = {"formId": form_id, "pageSize": 20}
                 if page_token:
                     request["pageToken"] = page_token
                 page = forms_service.forms().responses().list(**request).execute()
@@ -497,29 +500,49 @@ class GoogleFormsService:
             " ".join(question.title.casefold().split()).rstrip(":")
             for question in questions
         }
-        result = list(questions)
+        identity_questions: list[GoogleFormQuestion] = []
         if not any(
             GoogleFormsService._is_applicant_name_title(title)
             for title in existing_titles | requested_titles
         ):
-            result.insert(
-                0,
+            identity_questions.append(
                 GoogleFormQuestion(
-                    title="Full name",
+                    title="Full Name",
                     question_type=GoogleFormQuestionType.short_text,
                     required=True,
                 ),
             )
         if not any("email" in title for title in existing_titles | requested_titles):
-            result.insert(
-                1 if result and "name" in result[0].title.casefold() else 0,
+            identity_questions.append(
                 GoogleFormQuestion(
-                    title="Email address",
+                    title="Email Address",
                     question_type=GoogleFormQuestionType.short_text,
                     required=True,
                 ),
             )
-        return result
+        if not any(
+            title in {"contact number", "phone", "phone number", "mobile", "mobile number"}
+            for title in existing_titles | requested_titles
+        ):
+            identity_questions.append(
+                GoogleFormQuestion(
+                    title="Contact Number",
+                    question_type=GoogleFormQuestionType.short_text,
+                    required=True,
+                )
+            )
+        if not any(
+            title in {"linkedin", "linkedin url", "linkedin profile", "linkedin profile url"}
+            for title in existing_titles | requested_titles
+        ):
+            identity_questions.append(
+                GoogleFormQuestion(
+                    title="LinkedIn URL",
+                    question_type=GoogleFormQuestionType.short_text,
+                    required=False,
+                )
+            )
+        return identity_questions + list(questions)
 
     @staticmethod
     def _is_applicant_name_title(title: str) -> bool:

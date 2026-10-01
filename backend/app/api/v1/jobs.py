@@ -34,6 +34,20 @@ from backend.app.services.form_sync_service import sync_form_responses
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
+def _job_prompt_payload(row: JobRead) -> JobCreate:
+    fields = {
+        "title",
+        "tech_stack",
+        "seniority",
+        "required_experience",
+        "salary",
+        "location",
+        "work_type",
+        "university",
+    }
+    return JobCreate.model_validate(row.model_dump(include=fields))
+
+
 class JobsStore:
     def create_job(self, job: JobCreate) -> JobRead:
         return jobs_db.create_job(job)
@@ -91,13 +105,7 @@ def generate_jd_route(job_id: UUID) -> JobRead:
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
 
-    payload = JobCreate(
-        title=row.title,
-        tech_stack=row.tech_stack,
-        seniority=row.seniority,
-        compensation_min=row.compensation_min,
-        compensation_max=row.compensation_max,
-    )
+    payload = _job_prompt_payload(row)
     provider = get_ai_provider()
     markdown = provider.generate_text(
         system_instruction=JOB_DESCRIPTION_SYSTEM_PROMPT,
@@ -116,13 +124,7 @@ def generate_form_questions_route(job_id: UUID) -> GoogleFormQuestionSet:
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
 
-    payload = JobCreate(
-        title=row.title,
-        tech_stack=row.tech_stack,
-        seniority=row.seniority,
-        compensation_min=row.compensation_min,
-        compensation_max=row.compensation_max,
-    )
+    payload = _job_prompt_payload(row)
     result = get_ai_provider().generate_structured(
         system_instruction=FORM_QUESTION_SYSTEM_PROMPT,
         user_content=build_form_questions_user_prompt(payload),
@@ -137,13 +139,7 @@ def clone_form_route(job_id: UUID, question_set: GoogleFormQuestionSet) -> Googl
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
 
-    payload = JobCreate(
-        title=row.title,
-        tech_stack=row.tech_stack,
-        seniority=row.seniority,
-        compensation_min=row.compensation_min,
-        compensation_max=row.compensation_max,
-    )
+    payload = _job_prompt_payload(row)
     service = GoogleFormsService()
     try:
         result = service.clone_application_form(
@@ -181,13 +177,7 @@ def linkedin_blurb_route(job_id: UUID) -> JobRead:
             detail="application form must be cloned before creating a post",
         )
 
-    payload = JobCreate(
-        title=row.title,
-        tech_stack=row.tech_stack,
-        seniority=row.seniority,
-        compensation_min=row.compensation_min,
-        compensation_max=row.compensation_max,
-    )
+    payload = _job_prompt_payload(row)
     blurb = get_ai_provider().generate_text(
         system_instruction=LINKEDIN_BLURB_SYSTEM_PROMPT,
         user_content=build_linkedin_blurb_user_prompt(

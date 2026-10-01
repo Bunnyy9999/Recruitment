@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     google_oauth_token_file: Path | None = None
     google_form_template_id: str | None = None
     google_drive_folder_id: str | None = None
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: SecretStr | None = None
+    langfuse_base_url: AnyHttpUrl | str | None = None
 
     @field_validator("recordings_dir", mode="before")
     @classmethod

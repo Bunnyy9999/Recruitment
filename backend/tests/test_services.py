@@ -182,8 +182,8 @@ class FormQuestionPromptTests(TestCase):
             title="Data Engineer",
             tech_stack="Python, PostgreSQL, Airflow",
             seniority="Senior",
-            compensation_min=120000,
-            compensation_max=160000,
+            required_experience="5 years",
+            salary="$120,000-$160,000",
         )
 
         payload = build_form_questions_user_prompt(job)
@@ -239,6 +239,7 @@ class FormQuestionGenerationTests(TestCase):
             title="Data Engineer",
             tech_stack="Python, PostgreSQL, Airflow",
             seniority="Senior",
+            required_experience="5 years",
         )
 
         result = service.generate_and_clone_application_form(job, provider)
@@ -249,7 +250,7 @@ class FormQuestionGenerationTests(TestCase):
         )
         self.assertIn("Airflow", provider.calls[0]["user_content"])
         request_items = forms.batch_calls[0]["body"]["requests"]
-        self.assertEqual(len(request_items), 5)
+        self.assertEqual(len(request_items), 7)
 
 
 class GoogleFormsServiceTests(TestCase):
@@ -304,16 +305,20 @@ class GoogleFormsServiceTests(TestCase):
         requests = self.forms.batch_calls[0]["body"]["requests"]
         self.assertEqual(requests[0]["updateFormInfo"]["info"]["title"], "Data Engineer Application")
         self.assertEqual(requests[0]["updateFormInfo"]["updateMask"], "title")
-        self.assertEqual(requests[1]["createItem"]["item"]["title"], "Full name")
-        self.assertEqual(requests[2]["createItem"]["item"]["title"], "Email address")
-        self.assertEqual(requests[3]["createItem"]["location"]["index"], 3)
+        self.assertEqual(requests[1]["createItem"]["item"]["title"], "Full Name")
+        self.assertEqual(requests[2]["createItem"]["item"]["title"], "Email Address")
+        self.assertEqual(requests[3]["createItem"]["item"]["title"], "Contact Number")
+        self.assertTrue(requests[3]["createItem"]["item"]["questionItem"]["question"]["required"])
+        self.assertEqual(requests[4]["createItem"]["item"]["title"], "LinkedIn URL")
+        self.assertFalse(requests[4]["createItem"]["item"]["questionItem"]["question"]["required"])
+        self.assertEqual(requests[5]["createItem"]["location"]["index"], 5)
         self.assertEqual(
-            requests[3]["createItem"]["item"]["questionItem"]["question"]["textQuestion"],
+            requests[5]["createItem"]["item"]["questionItem"]["question"]["textQuestion"],
             {"paragraph": True},
         )
-        self.assertEqual(requests[4]["createItem"]["location"]["index"], 4)
+        self.assertEqual(requests[6]["createItem"]["location"]["index"], 6)
         self.assertEqual(
-            requests[4]["createItem"]["item"]["questionItem"]["question"]["choiceQuestion"]["type"],
+            requests[6]["createItem"]["item"]["questionItem"]["question"]["choiceQuestion"]["type"],
             "RADIO",
         )
 
@@ -727,6 +732,7 @@ class FormSyncServiceTests(TestCase):
         )
         with (
             patch("backend.app.services.form_sync_service.candidates_db.get_application_for_form_response", return_value=None),
+            patch("backend.app.services.form_sync_service.candidates_db.get_application_for_job_identity", return_value=None),
             patch("backend.app.services.form_sync_service.candidates_db.find_candidate_by_identity", return_value=None),
             patch("backend.app.services.form_sync_service.candidates_db.create_candidate", return_value=candidate) as create_candidate,
             patch("backend.app.services.form_sync_service.candidates_db.create_screened_application", return_value=application) as save_application,
@@ -757,6 +763,58 @@ class FormSyncServiceTests(TestCase):
         self.assertNotIn("sam@example.com", screening_input)
         self.assertIn("[EMAIL]", screening_input)
 
+    def test_sync_skips_when_any_identity_matches_existing_job_applicant(self) -> None:
+        existing_application = SimpleNamespace(
+            id=uuid4(),
+            agent_decision=ScreeningDecision.passed,
+            pipeline_status=PipelineStatus.active_pipeline,
+            screening_summary="Already applied using this phone number.",
+        )
+        with (
+            patch("backend.app.services.form_sync_service.candidates_db.get_application_for_form_response", return_value=None),
+            patch("backend.app.services.form_sync_service.candidates_db.get_application_for_job_identity", return_value=existing_application) as identity_lookup,
+            patch("backend.app.services.form_sync_service.candidates_db.find_candidate_by_identity") as candidate_lookup,
+        ):
+            result = sync_form_responses(
+                self.job,
+                forms_service=self.forms,
+                ai_provider=self.provider,
+            )
+
+        self.assertEqual(result.skipped_duplicates, 1)
+        self.assertIn("email, phone, or LinkedIn", result.items[0].detail)
+        identity_lookup.assert_called_once()
+        candidate_lookup.assert_not_called()
+        self.forms.extract_resume_text.assert_not_called()
+        self.provider.generate_structured.assert_not_called()
+
+    def test_sync_checks_phone_duplicate_before_required_name_and_email(self) -> None:
+        original = self.forms.list_application_responses.return_value[0]
+        incomplete_submission = original.model_copy(
+            update={"applicant_name": None, "email": None}
+        )
+        self.forms.list_application_responses.return_value = [incomplete_submission]
+        existing_application = SimpleNamespace(
+            id=uuid4(),
+            agent_decision=ScreeningDecision.passed,
+            pipeline_status=PipelineStatus.active_pipeline,
+            screening_summary="Already applied using this phone number.",
+        )
+        with (
+            patch("backend.app.services.form_sync_service.candidates_db.get_application_for_form_response", return_value=None),
+            patch("backend.app.services.form_sync_service.candidates_db.get_application_for_job_identity", return_value=existing_application) as identity_lookup,
+        ):
+            result = sync_form_responses(
+                self.job,
+                forms_service=self.forms,
+                ai_provider=self.provider,
+            )
+
+        self.assertEqual(result.skipped_duplicates, 1)
+        identity = identity_lookup.call_args.args[1]
+        self.assertIsNone(identity.email)
+        self.assertEqual(identity.phone, "+15551234567")
+
     def test_sync_skips_an_already_saved_form_response(self) -> None:
         existing = SimpleNamespace(
             id=uuid4(),
@@ -785,6 +843,7 @@ class FormSyncServiceTests(TestCase):
         )
         with (
             patch("backend.app.services.form_sync_service.candidates_db.get_application_for_form_response", return_value=None),
+            patch("backend.app.services.form_sync_service.candidates_db.get_application_for_job_identity", return_value=None),
             patch("backend.app.services.form_sync_service.candidates_db.find_candidate_by_identity", return_value=None),
         ):
             result = sync_form_responses(

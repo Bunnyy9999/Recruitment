@@ -28,6 +28,13 @@ for index, job in enumerate(jobs):
         with container:
             st.markdown(f"**{job.get('title', 'Untitled job')}**")
             st.caption(f"{job.get('seniority', 'Unspecified')} · {job.get('tech_stack', 'No stack data')}")
+            details = " · ".join(
+                value
+                for value in [job.get("location"), job.get("work_type"), job.get("salary")]
+                if value
+            )
+            if details:
+                st.caption(details)
             st.markdown(status_badge(job.get("status")), unsafe_allow_html=True)
             if st.button("Open", key=f"open-job-{job['id']}", use_container_width=True):
                 st.session_state["selected_job_id"] = job["id"]
@@ -39,6 +46,19 @@ selected_job_title = selected_job.get("title", "Selected role")
 selected_job_status = selected_job.get("status", "draft")
 st.subheader(f"{selected_job_title}")
 st.markdown(f"{status_badge(selected_job_status)} · {selected_job.get('seniority', 'Unspecified')} · {selected_job.get('tech_stack', 'No stack data')}", unsafe_allow_html=True)
+st.caption(
+    " · ".join(
+        value
+        for value in [
+            selected_job.get("required_experience"),
+            selected_job.get("salary"),
+            selected_job.get("location"),
+            selected_job.get("work_type"),
+            selected_job.get("university"),
+        ]
+        if value
+    )
+)
 
 applications = safe_api(lambda: get_json(f"/api/v1/jobs/{selected_job['id']}/applications")) or []
 filter_options = ["All", "Pass", "Fail", "Pending"]

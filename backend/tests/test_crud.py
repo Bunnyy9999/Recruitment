@@ -62,6 +62,14 @@ class FakeQuery:
         self.client.events.append((self.table_name, "eq", column, value))
         return self
 
+    def neq(self, column: str, value: object) -> "FakeQuery":
+        self.client.events.append((self.table_name, "neq", column, value))
+        return self
+
+    def in_(self, column: str, values: list[object]) -> "FakeQuery":
+        self.client.events.append((self.table_name, "in", column, values))
+        return self
+
     def ilike(self, column: str, value: str) -> "FakeQuery":
         self.client.events.append((self.table_name, "ilike", column, value))
         return self
@@ -98,8 +106,11 @@ def job_row() -> dict[str, object]:
         "title": "Data Engineer",
         "tech_stack": "Python, PostgreSQL",
         "seniority": "Senior",
-        "compensation_min": "120000.00",
-        "compensation_max": "160000.00",
+        "required_experience": "5 years",
+        "salary": "$120,000-$160,000",
+        "location": None,
+        "work_type": None,
+        "university": None,
         "jd_markdown": None,
         "google_form_id": None,
         "google_form_url": None,
@@ -199,6 +210,7 @@ class JobCrudTests(TestCase):
             title="Data Engineer",
             tech_stack="Python, PostgreSQL",
             seniority="Senior",
+            required_experience="5 years",
         )
 
         with patch.object(jobs_db, "supabase_client", client):
@@ -315,6 +327,26 @@ class CandidateCrudTests(TestCase):
 
         self.assertEqual(application.id, row["id"])
 
+    def test_job_identity_duplicate_matches_any_supplied_identity_key(self) -> None:
+        candidate_id = uuid4()
+        job_id = uuid4()
+        candidate = candidate_row(candidate_id)
+        application = application_row(candidate_id, job_id)
+        client = FakeSupabaseClient([[], [candidate], [application]])
+        identity = CandidateIdentityLookup(
+            email="new-address@example.com",
+            phone="+15551234567",
+        )
+
+        with patch.object(candidates_db, "supabase_client", client):
+            found = candidates_db.get_application_for_job_identity(job_id, identity)
+
+        self.assertEqual(found.id, application["id"])
+        self.assertIn(("candidates", "ilike", "email", "new-address@example.com"), client.events)
+        self.assertIn(("candidates", "eq", "phone", "+15551234567"), client.events)
+        self.assertIn(("applications", "eq", "job_id", str(job_id)), client.events)
+        self.assertIn(("applications", "in", "candidate_id", [str(candidate_id)]), client.events)
+
     def test_get_application_for_form_response(self) -> None:
         row = application_row()
         row["google_form_response_id"] = "forms-response-1"
@@ -342,7 +374,7 @@ class CandidateCrudTests(TestCase):
             "email": candidate["email"],
             "phone": candidate["phone"],
         }
-        client = FakeSupabaseClient([[row]])
+        client = FakeSupabaseClient([[row], []])
 
         with patch.object(candidates_db, "supabase_client", client):
             applications = candidates_db.list_job_applications(row["job_id"])
@@ -352,8 +384,28 @@ class CandidateCrudTests(TestCase):
         self.assertEqual(applications[0].email, "alex@example.com")
         self.assertEqual(applications[0].phone, "+15551234567")
         self.assertEqual(applications[0].form_responses, {"Experience": "8 years"})
+        self.assertFalse(applications[0].has_other_applications)
         self.assertIn(
             ("applications", "select", "*, candidates(full_name,email,phone)"),
+            client.events,
+        )
+
+    def test_list_job_applications_flags_candidates_with_other_jobs(self) -> None:
+        row = application_row()
+        candidate = candidate_row(row["candidate_id"])
+        row["candidates"] = {
+            "full_name": candidate["full_name"],
+            "email": candidate["email"],
+            "phone": candidate["phone"],
+        }
+        client = FakeSupabaseClient([[row], [{"candidate_id": str(row["candidate_id"])}]])
+
+        with patch.object(candidates_db, "supabase_client", client):
+            applications = candidates_db.list_job_applications(row["job_id"])
+
+        self.assertTrue(applications[0].has_other_applications)
+        self.assertIn(
+            ("applications", "neq", "job_id", str(row["job_id"])),
             client.events,
         )
 
@@ -611,6 +663,7 @@ class InterviewCrudTests(TestCase):
             title="Data Engineer",
             tech_stack="Python",
             seniority="Senior",
+            required_experience="5 years",
         )
 
         with patch.object(jobs_db, "supabase_client", client):

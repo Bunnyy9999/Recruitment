@@ -16,19 +16,28 @@ except Exception as error:
 create_col, studio_col = st.columns([1, 1.25])
 with create_col:
     st.subheader("New requisition")
+    st.caption(":red[*] Required")
     with st.form("create_job"):
-        title = st.text_input("Role title", placeholder="Senior Data Engineer")
-        stack = st.text_area("Technology stack", placeholder="Python, PostgreSQL, dbt")
-        seniority = st.text_input("Seniority", placeholder="Senior")
-        min_comp = st.number_input("Minimum compensation", min_value=0, step=5000, value=0)
-        max_comp = st.number_input("Maximum compensation", min_value=0, step=5000, value=0)
+        title = st.text_input("Role title :red[*]", placeholder="Senior Data Engineer")
+        stack = st.text_area("Technology stack :red[*]", placeholder="Python, PostgreSQL, dbt")
+        seniority = st.text_input("Seniority :red[*]", placeholder="Senior")
+        required_experience = st.text_input("Required experience :red[*]", placeholder="5+ years building production data systems")
+        salary = st.text_input("Salary (optional)", placeholder="$120,000-$160,000 or competitive")
+        location = st.text_input("Location (optional)", placeholder="New York, NY")
+        work_type = st.text_input("Work type (optional)", placeholder="Remote, hybrid, or on-site")
+        university = st.text_input("University (optional)", placeholder="Preferred universities, if applicable")
         submitted = st.form_submit_button("Create requisition", type="primary", use_container_width=True)
     if submitted:
-        payload = {"title": title, "tech_stack": stack, "seniority": seniority}
-        if min_comp:
-            payload["compensation_min"] = min_comp
-        if max_comp:
-            payload["compensation_max"] = max_comp
+        payload = {
+            "title": title,
+            "tech_stack": stack,
+            "seniority": seniority,
+            "required_experience": required_experience,
+            "salary": salary or None,
+            "location": location or None,
+            "work_type": work_type or None,
+            "university": university or None,
+        }
         if safe_api(lambda: post_json("/api/v1/jobs", payload), success="Requisition created"):
             st.rerun()
 
@@ -44,7 +53,11 @@ with studio_col:
     with tabs[0]:
         st.write(f"**Stack**  {job['tech_stack']}")
         st.write(f"**Seniority**  {job['seniority']}")
-        st.write(f"**Compensation**  {job.get('compensation_min') or '—'} – {job.get('compensation_max') or '—'}")
+        st.write(f"**Required experience**  {job['required_experience']}")
+        st.write(f"**Salary**  {job.get('salary') or '—'}")
+        st.write(f"**Location**  {job.get('location') or '—'}")
+        st.write(f"**Work type**  {job.get('work_type') or '—'}")
+        st.write(f"**University**  {job.get('university') or '—'}")
         new_status = st.selectbox("Status", ["draft", "posted", "closed"], index=["draft", "posted", "closed"].index(job["status"]), key=f"status-{job['id']}")
         if st.button("Save status", key=f"save-status-{job['id']}"):
             if safe_api(lambda: patch_json(f"/api/v1/jobs/{job['id']}", {"status": new_status}), success="Status saved"):
@@ -54,7 +67,9 @@ with studio_col:
         pending_jd_key = f"pending-jd-{job['id']}"
         if pending_jd_key in st.session_state:
             st.session_state[jd_key] = st.session_state.pop(pending_jd_key)
-        jd = st.text_area("Editable Markdown", value=job.get("jd_markdown") or "", height=330, key=jd_key)
+        elif jd_key not in st.session_state:
+            st.session_state[jd_key] = job.get("jd_markdown") or ""
+        jd = st.text_area("Editable Markdown", key=jd_key, height=330)
         a, b = st.columns(2)
         if a.button("Generate with Gemini", key=f"generate-{job['id']}", type="primary"):
             generated_job = safe_api(lambda: post_json(f"/api/v1/jobs/{job['id']}/generate-jd"), success="Draft generated")
@@ -84,13 +99,22 @@ with studio_col:
             reviewed_questions = []
             for index, question in enumerate(questions):
                 with st.expander(f"Question {index + 1}", expanded=True):
-                    title_value = st.text_input("Question text", value=question["title"], key=f"question-title-{job['id']}-{index}")
+                    title_key = f"question-title-{job['id']}-{index}"
+                    type_key = f"question-type-{job['id']}-{index}"
+                    required_key = f"question-required-{job['id']}-{index}"
+                    options_key = f"question-options-{job['id']}-{index}"
+                    st.session_state.setdefault(title_key, question["title"])
+                    st.session_state.setdefault(type_key, question["question_type"])
+                    st.session_state.setdefault(required_key, question.get("required", True))
+                    st.session_state.setdefault(options_key, "\n".join(question.get("options", [])))
+
+                    title_value = st.text_input("Question text", key=title_key)
                     type_options = ["short_text", "paragraph", "multiple_choice", "checkbox"]
-                    type_value = st.selectbox("Answer type", type_options, index=type_options.index(question["question_type"]), key=f"question-type-{job['id']}-{index}")
-                    required_value = st.checkbox("Required", value=question.get("required", True), key=f"question-required-{job['id']}-{index}")
+                    type_value = st.selectbox("Answer type", type_options, key=type_key)
+                    required_value = st.checkbox("Required", key=required_key)
                     options_value = []
                     if type_value in {"multiple_choice", "checkbox"}:
-                        options_text = st.text_area("Options, one per line", value="\n".join(question.get("options", [])), key=f"question-options-{job['id']}-{index}")
+                        options_text = st.text_area("Options, one per line", key=options_key)
                         options_value = [item.strip() for item in options_text.splitlines() if item.strip()]
                     reviewed_questions.append({"title": title_value, "question_type": type_value, "options": options_value, "required": required_value})
                     if st.button("Remove question", key=f"remove-question-{job['id']}-{index}"):
@@ -127,7 +151,9 @@ with studio_col:
         pending_blurb_key = f"pending-blurb-{job['id']}"
         if pending_blurb_key in st.session_state:
             st.session_state[blurb_key] = st.session_state.pop(pending_blurb_key)
-        blurb = st.text_area("Reviewed post copy", value=job.get("linkedin_blurb") or "", height=260, key=blurb_key)
+        elif blurb_key not in st.session_state:
+            st.session_state[blurb_key] = job.get("linkedin_blurb") or ""
+        blurb = st.text_area("Reviewed post copy", key=blurb_key, height=260)
         a, b = st.columns(2)
         if a.button("Generate post", key=f"blurb-generate-{job['id']}", type="primary"):
             generated_job = safe_api(lambda: post_json(f"/api/v1/jobs/{job['id']}/linkedin-blurb"), success="Post draft generated")

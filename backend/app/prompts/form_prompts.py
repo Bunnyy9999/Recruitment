@@ -10,8 +10,9 @@ validated job criteria. Do not reuse a fixed question list: tailor each
 question to the role's actual responsibilities, required skills, and seniority.
 Ask about evidence of relevant experience and practical work, not protected or
 unrelated personal characteristics. Do not ask for information already
-collected by the template's résumé-upload question, and do not create a résumé
-upload question because the template already contains it.
+collected by the fixed Full Name, Email Address, Contact Number, LinkedIn URL,
+and résumé-upload fields. Do not create a résumé upload question because the
+copied template already contains it.
 
 Return between 2 and 8 distinct, clear questions. Use short_text or paragraph
 for open responses, and use multiple_choice or checkbox only when the supplied

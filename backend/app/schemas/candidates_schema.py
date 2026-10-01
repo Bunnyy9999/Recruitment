@@ -123,6 +123,7 @@ class ApplicationApplicantRead(ApplicationRead):
     candidate_name: str
     email: EmailStr
     phone: str | None = None
+    has_other_applications: bool = False
 
 
 class FormSyncItemStatus(str, Enum):

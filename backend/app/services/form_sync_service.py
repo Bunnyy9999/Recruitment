@@ -5,6 +5,7 @@ from backend.app.prompts.screen_prompts import (
 )
 from backend.app.schemas.candidates_schema import (
     ApplicationCreate,
+    ApplicationRead,
     ApplicationScreeningResult,
     CandidateCreate,
     CandidateIdentityLookup,
@@ -80,19 +81,40 @@ def _sync_submission(
 
     name = (submission.applicant_name or "").strip()
     email = (submission.email or "").strip()
-    if not name or not email:
-        return _sync_error(submission, "Required name or email is missing from the response.")
-
     phone = _answer_by_keyword(
         submission.answers, ("phone", "mobile", "contact number")
     )
     linkedin_url = _answer_by_keyword(submission.answers, ("linkedin",))
+    identity: CandidateIdentityLookup | None = None
+    if email or phone or linkedin_url:
+        try:
+            identity = CandidateIdentityLookup(
+                email=email or None,
+                phone=phone,
+                linkedin_url=linkedin_url,
+            )
+            existing_identity_application = candidates_db.get_application_for_job_identity(
+                job.id, identity
+            )
+        except Exception:
+            return _sync_error(submission, "Applicant identity could not be matched safely.")
+        if existing_identity_application is not None:
+            return _duplicate_item(
+                submission,
+                existing_identity_application,
+                "An applicant with a matching email, phone, or LinkedIn URL already applied for this job.",
+            )
+
+    if not name or not email:
+        return _sync_error(submission, "Required name or email is missing from the response.")
+
     try:
-        identity = CandidateIdentityLookup(
-            email=email,
-            phone=phone,
-            linkedin_url=linkedin_url,
-        )
+        if identity is None:
+            identity = CandidateIdentityLookup(
+                email=email,
+                phone=phone,
+                linkedin_url=linkedin_url,
+            )
         candidate = candidates_db.find_candidate_by_identity(identity)
     except Exception:
         return _sync_error(submission, "Applicant identity could not be matched safely.")
@@ -102,16 +124,10 @@ def _sync_submission(
             candidate.id, job.id
         )
         if existing_application is not None:
-            return FormSyncItem(
-                response_id=submission.response_id,
-                candidate_name=candidate.full_name,
-                email=candidate.email,
-                application_id=existing_application.id,
-                agent_decision=existing_application.agent_decision,
-                pipeline_status=existing_application.pipeline_status,
-                screening_summary=existing_application.screening_summary,
-                status=FormSyncItemStatus.duplicate,
-                detail="This candidate already has an application for this job.",
+            return _duplicate_item(
+                submission,
+                existing_application,
+                "This candidate already has an application for this job.",
             )
 
     try:
@@ -168,6 +184,18 @@ def _sync_submission(
             screening=screening,
         )
     except Exception:
+        try:
+            existing_identity_application = candidates_db.get_application_for_job_identity(
+                job.id, identity
+            )
+        except Exception:
+            existing_identity_application = None
+        if existing_identity_application is not None:
+            return _duplicate_item(
+                submission,
+                existing_identity_application,
+                "An applicant with a matching email, phone, or LinkedIn URL already applied for this job.",
+            )
         return _sync_error(submission, "Application could not be saved; sync can be retried.")
 
     return FormSyncItem(
@@ -196,5 +224,23 @@ def _sync_error(submission: GoogleFormSubmission, detail: str) -> FormSyncItem:
         candidate_name=submission.applicant_name,
         email=submission.email,
         status=FormSyncItemStatus.error,
+        detail=detail,
+    )
+
+
+def _duplicate_item(
+    submission: GoogleFormSubmission,
+    application: ApplicationRead,
+    detail: str,
+) -> FormSyncItem:
+    return FormSyncItem(
+        response_id=submission.response_id,
+        candidate_name=submission.applicant_name,
+        email=submission.email,
+        application_id=application.id,
+        agent_decision=application.agent_decision,
+        pipeline_status=application.pipeline_status,
+        screening_summary=application.screening_summary,
+        status=FormSyncItemStatus.duplicate,
         detail=detail,
     )

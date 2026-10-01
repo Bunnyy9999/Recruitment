@@ -19,8 +19,9 @@ class JobDescriptionPromptTests(TestCase):
             title="Data Engineer",
             tech_stack="Python, PostgreSQL",
             seniority="Senior",
-            compensation_min=120000,
-            compensation_max=160000,
+            required_experience="5 years",
+            salary="$120,000-$160,000",
+            location="Remote",
         )
 
         payload = json.loads(build_job_description_user_prompt(job))

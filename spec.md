@@ -25,8 +25,11 @@ Open positions created in Phase 1. `applications.job_id` references this table.
 - `title`: string
 - `tech_stack`: text
 - `seniority`: string
-- `compensation_min`: numeric (Nullable)
-- `compensation_max`: numeric (Nullable)
+- `required_experience`: text (Required)
+- `salary`: text (Nullable)
+- `location`: text (Nullable)
+- `work_type`: text (Nullable)
+- `university`: text (Nullable)
 - `jd_markdown`: text (Nullable) -- AI draft plus HR edits
 - `google_form_id`: string (Nullable)
 - `google_form_url`: string (Nullable)
@@ -90,18 +93,18 @@ Google Forms settings read `GOOGLE_SERVICE_ACCOUNT_FILE` from the environment; r
 ## 3. Workflow Implementations & Step-by-Step Logistics
 
 ### Phase 1: Target Position Setup & Asset Drafting
-1. **Hiring Criteria Processing**: HR inputs standard requirements (Tech stack, target seniority level, operational compensation budget bounds).
+1. **Hiring Criteria Processing**: HR inputs role requirements (tech stack, seniority, and required experience) plus optional salary, location, work type, and university details.
 2. **JD and Question Drafting**: Gemini Flash API (3.1 Flash-Lite) uses the submitted job criteria to draft the Markdown job description and a dynamic, role-specific set of application questions. HR can review/edit the JD before posting. The question set is structured by type and validated, not chosen from a fixed global question list.
-3. **Form Creation**: Google Forms cannot add a file-upload question through Forms API alone. The backend uses Drive to copy a pre-configured template containing the résumé-upload question, updates the copied form's title, and appends the model-generated typed questions. The existing résumé question remains in the copied form.
+3. **Form Creation**: Google Forms cannot add a file-upload question through Forms API alone. The backend uses Drive to copy a pre-configured template containing the résumé-upload question, updates the copied form's title, and appends the model-generated typed questions plus any missing Full Name, Email Address, Contact Number, and LinkedIn URL questions. The existing résumé question remains in the copied form.
 4. **Post and Form Link**: The backend obtains the copied form's responder URL, stores the form ID/URL on the job, and includes that URL in the generated LinkedIn/job post. HR reviews the post before publishing it. The post must link to the newly copied job-specific form, not the template form.
 
 ### Phase 2: Per-Job Ingestion, Integrated AI Evaluation, and History Check
-1. **The Sync Execution Loop**: HR opens a specific Job Dashboard and clicks "Sync all applicants". The backend retrieves every page of responses from that job's linked Google Form, maps each answer to its question title, and processes each response independently. The cloned form includes required name and email questions unless the template or generated questions already provide them. Uploaded PDF resumes are downloaded as binary media from Drive and their text is extracted for screening; the backend does not retain a local résumé copy. Original answers remain attached to the application for HR review. A response already stored for the same job is skipped on later syncs.
+1. **The Sync Execution Loop**: HR opens a specific Job Dashboard and clicks "Sync all applicants". The backend retrieves every page of up to 20 responses from that job's linked Google Form, following Google's next-page token, maps each answer to its question title, and processes each response independently. The cloned form includes required name, email, and contact number questions unless the template or generated questions already provide them; LinkedIn URL is optional. Uploaded PDF resumes are downloaded as binary media from Drive and their text is extracted for screening; the backend does not retain a local résumé copy. Original answers remain attached to the application for HR review. A response already stored for the same job is skipped on later syncs.
 2. **Identity Verification & Cross-Referencing**:
    - The engine checks incoming records against the global `candidates` data indices (`email`, `phone`, or `linkedin_url`).
    - **Scenario A (New Applicant)**: Initializes a row in `candidates` and maps a fresh entry to `applications`.
    - **Scenario B (Returning Candidate, New Job)**: Detects a global profile match but confirms no entry exists for this new `job_id`. It spins up a new application pointer. The user interface pulls historical sibling applications to show previous job names, stages, statuses, decisions, AI screening summaries, and any human remarks. AI screening summaries and human remarks are displayed separately.
-   - **Scenario C (Duplicate Applicant, Same Job)**: Identifies an application matching both `candidate_id` and `job_id`. The engine blocks the operation to prevent entry redundancy.
+   - **Scenario C (Duplicate Applicant, Same Job)**: Checks email, phone, and LinkedIn URL independently against applicants for the same `job_id`, even when other required form fields are missing. A match on any one field blocks the operation. A PostgreSQL trigger serializes and enforces this rule for concurrent inserts; unique constraints also prevent duplicate `(candidate_id, job_id)` and `(job_id, google_form_response_id)` rows.
 3. **The Combined Evaluation Branch**:
    - Programmatic filters replace supplied candidate names, ages, and genders with neutral markers prior to LLM evaluation, preserving unrelated experience text.
    - Gemini Flash API (3.1 Flash) evaluates the candidate's **extracted résumé text AND their textual Google Form responses** simultaneously against the Job Description.

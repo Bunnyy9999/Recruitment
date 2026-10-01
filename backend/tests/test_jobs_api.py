@@ -21,8 +21,11 @@ class FakeJobsDb:
             title=job.title,
             tech_stack=job.tech_stack,
             seniority=job.seniority,
-            compensation_min=job.compensation_min,
-            compensation_max=job.compensation_max,
+            required_experience=job.required_experience,
+            salary=job.salary,
+            location=job.location,
+            work_type=job.work_type,
+            university=job.university,
             jd_markdown=None,
             google_form_id=None,
             google_form_url=None,
@@ -66,8 +69,10 @@ class JobsApiTests(TestCase):
                 "title": "Data Engineer",
                 "tech_stack": "Python, Postgres",
                 "seniority": "Senior",
-                "compensation_min": 110000,
-                "compensation_max": 150000,
+                "required_experience": "5 years",
+                "salary": "$110,000-$150,000",
+                "location": "Remote",
+                "work_type": "Remote",
             },
         )
 
@@ -82,6 +87,7 @@ class JobsApiTests(TestCase):
                 title="Data Scientist",
                 tech_stack="Python, SQL",
                 seniority="Mid",
+                required_experience="3 years",
             )
         )
 
@@ -97,7 +103,7 @@ class JobsApiTests(TestCase):
 
     def test_linkedin_blurb_requires_form_and_jd(self) -> None:
         created = self.store.create_job(
-            JobCreate(title="Data Scientist", tech_stack="Python", seniority="Mid")
+            JobCreate(title="Data Scientist", tech_stack="Python", seniority="Mid", required_experience="3 years")
         )
 
         response = self.client.post(f"/api/v1/jobs/{created.id}/linkedin-blurb")
@@ -106,7 +112,7 @@ class JobsApiTests(TestCase):
 
     def test_linkedin_blurb_persists_provider_output_and_form_url(self) -> None:
         created = self.store.create_job(
-            JobCreate(title="Data Scientist", tech_stack="Python", seniority="Mid")
+            JobCreate(title="Data Scientist", tech_stack="Python", seniority="Mid", required_experience="3 years")
         )
         self.store.update_job(
             created.id,
@@ -124,7 +130,7 @@ class JobsApiTests(TestCase):
 
     def test_sync_runs_form_batch_without_manual_applicant_payload(self) -> None:
         created = self.store.create_job(
-            JobCreate(title="Data Scientist", tech_stack="Python", seniority="Mid")
+            JobCreate(title="Data Scientist", tech_stack="Python", seniority="Mid", required_experience="3 years")
         )
         self.store.update_job(
             created.id,
@@ -154,7 +160,7 @@ class JobsApiTests(TestCase):
 
     def test_clone_form_configuration_error_returns_service_unavailable(self) -> None:
         created = self.store.create_job(
-            JobCreate(title="Data Scientist", tech_stack="Python", seniority="Mid")
+            JobCreate(title="Data Scientist", tech_stack="Python", seniority="Mid", required_experience="3 years")
         )
         with patch.object(jobs_router, "GoogleFormsService") as forms_service:
             forms_service.return_value.clone_application_form.side_effect = (

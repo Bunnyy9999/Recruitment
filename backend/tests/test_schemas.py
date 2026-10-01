@@ -1,5 +1,4 @@
 from datetime import date, datetime, timezone
-from decimal import Decimal
 from unittest import TestCase
 from uuid import uuid4
 
@@ -25,27 +24,29 @@ from backend.app.schemas.jobs_schema import JobCreate, JobPatch, JobStatus
 
 
 class JobSchemaTests(TestCase):
-    def test_job_create_strips_whitespace_and_accepts_valid_compensation(self) -> None:
+    def test_job_create_strips_whitespace_and_accepts_optional_text_criteria(self) -> None:
         job = JobCreate(
             title="  Data Engineer  ",
             tech_stack="  Python, Postgres  ",
             seniority="  Senior  ",
-            compensation_min=Decimal("100000.00"),
-            compensation_max=Decimal("150000.00"),
+            required_experience="  5 years  ",
+            salary="  Competitive  ",
+            location="  Remote  ",
         )
 
         self.assertEqual(job.title, "Data Engineer")
         self.assertEqual(job.tech_stack, "Python, Postgres")
         self.assertEqual(job.seniority, "Senior")
+        self.assertEqual(job.required_experience, "5 years")
+        self.assertEqual(job.salary, "Competitive")
+        self.assertEqual(job.location, "Remote")
 
-    def test_job_create_rejects_invalid_compensation_range(self) -> None:
+    def test_job_create_requires_experience(self) -> None:
         with self.assertRaises(ValidationError):
             JobCreate(
                 title="Data Engineer",
                 tech_stack="Python",
                 seniority="Senior",
-                compensation_min=Decimal("150000"),
-                compensation_max=Decimal("100000"),
             )
 
     def test_job_create_rejects_unknown_fields(self) -> None:
@@ -54,6 +55,7 @@ class JobSchemaTests(TestCase):
                 title="Data Engineer",
                 tech_stack="Python",
                 seniority="Senior",
+                required_experience="5 years",
                 unexpected="not accepted",
             )
 

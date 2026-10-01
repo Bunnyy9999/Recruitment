@@ -36,7 +36,15 @@ def command_center() -> None:
         if not jobs:
             st.info("No requisitions yet. Open the Hiring Request page to create one.")
         for job in jobs[:8]:
-            st.markdown(f'<div class="record"><div class="record-title">{job["title"]}</div><div class="record-meta">{job["seniority"]} · {job["tech_stack"]} · {status_badge(job["status"])}</div></div>', unsafe_allow_html=True)
+            metadata = [job.get("seniority"), job.get("tech_stack")]
+            metadata.extend(
+                value
+                for value in [job.get("location"), job.get("work_type"), job.get("salary")]
+                if value
+            )
+            metadata.append(status_badge(job["status"]))
+            details = " · ".join(value for value in metadata if value)
+            st.markdown(f'<div class="record"><div class="record-title">{job["title"]}</div><div class="record-meta">{details}</div></div>', unsafe_allow_html=True)
     with right:
         st.subheader("Pipeline signals")
         st.metric("Waiting on CEO", ceo)
