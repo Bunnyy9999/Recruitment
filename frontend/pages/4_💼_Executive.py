@@ -35,8 +35,6 @@ if dossier:
         st.markdown(f"**Round {round_['sequence_order']}** · {fmt_status(round_['status'])} · {round_.get('feedback') or 'No feedback'}")
         if round_.get("local_audio_path"):
             st.caption(f"Verified local recording: {round_['local_audio_path']}")
-    if application.get("pipeline_status") == "active_pipeline" and st.button("Move to CEO review", type="primary"):
-        safe_api(lambda: post_json(f"/api/v1/applications/{app['id']}/move-to-ceo"), success="Application moved to CEO review")
     st.divider()
     decision = st.radio("Final decision", ["pass", "fail"], horizontal=True)
     remarks = st.text_area("CEO remarks", placeholder="Decision rationale")

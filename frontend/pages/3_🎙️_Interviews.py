@@ -4,6 +4,12 @@ import streamlit as st
 
 from ui import api_request, apply_styles, get_json, job_options, patch_json, post_json, safe_api, status_badge
 
+
+def delete_interview_round(interview_id: str) -> bool:
+    api_request("DELETE", f"/api/v1/interviews/{interview_id}")
+    return True
+
+
 apply_styles()
 st.markdown('<div class="eyebrow">Phase 3 · technical interviews</div>', unsafe_allow_html=True)
 st.title("Interviews")
@@ -33,20 +39,60 @@ with left:
     for round_ in rounds:
         st.markdown(f'<div class="record"><div class="record-title">Technical interview {round_["sequence_order"]} {status_badge(round_["status"])}</div><div class="record-meta">Scheduled: {round_.get("scheduled_at") or "—"} · Date: {round_.get("interview_date") or "—"}</div><div class="record-meta">{round_.get("feedback") or "No interviewer notes yet."}</div></div>', unsafe_allow_html=True)
         with st.expander(f"Manage round {round_['sequence_order']}"):
-            feedback = st.text_area("Feedback", value=round_.get("feedback") or "", key=f"feedback-{round_['id']}")
-            state = st.selectbox("Round status", ["pending", "complete"], index=0 if round_["status"] == "pending" else 1, key=f"state-{round_['id']}")
-            recording = st.file_uploader("recording", type=["mp3", "m4a"], key=f"recording-{round_['id']}")
-            recording_date = st.date_input("Interview date", value=date.today(), key=f"date-{round_['id']}")
-            if recording and st.button("Store recording", key=f"upload-{round_['id']}", type="primary"):
-                result = safe_api(lambda: api_request("POST", f"/api/v1/interviews/{round_['id']}/recording", params={"interview_date": recording_date.isoformat()}, files={"recording": (recording.name, recording.getvalue(), "audio/mpeg")}), success="Recording verified and linked")
+            with st.form(f"manage-round-{round_['id']}"):
+                feedback = st.text_area("Feedback", value=round_.get("feedback") or "", key=f"feedback-{round_['id']}")
+                state = st.selectbox("Round status", ["pending", "complete"], index=0 if round_["status"] == "pending" else 1, key=f"state-{round_['id']}")
+                recording = st.file_uploader("Recording (optional)", type=["mp3", "m4a"], key=f"recording-{round_['id']}")
+                recording_date = st.date_input("Interview date", value=round_.get("interview_date") or date.today(), key=f"date-{round_['id']}")
+                save_round = st.form_submit_button("Save round", type="primary")
+
+            if save_round:
+                recording_saved = True
+                if recording:
+                    recording_saved = safe_api(
+                        lambda: api_request(
+                            "POST",
+                            f"/api/v1/interviews/{round_['id']}/recording",
+                            params={"interview_date": recording_date.isoformat()},
+                            files={"recording": (recording.name, recording.getvalue(), "audio/mpeg")},
+                        )
+                    ) is not None
+
+                if recording_saved:
+                    result = safe_api(
+                        lambda: patch_json(
+                            f"/api/v1/interviews/{round_['id']}",
+                            {"feedback": feedback, "status": state},
+                        ),
+                        success="Round saved",
+                    )
+                    if result:
+                        st.rerun()
+
+            if st.button("Remove round", key=f"delete-round-{round_['id']}", type="secondary"):
+                result = safe_api(
+                    lambda: delete_interview_round(str(round_["id"])),
+                    success="Round removed",
+                )
                 if result:
                     st.rerun()
-            if st.button("Save round", key=f"save-round-{round_['id']}"):
-                           safe_api(lambda: patch_json(f"/api/v1/interviews/{round_['id']}", {"feedback": feedback, "status": state}), success="Round updated")         
-            if st.button("Remove round", key=f"delete-round-{round_['id']}", type="secondary"):
-                result = safe_api(lambda: api_request("DELETE", f"/api/v1/interviews/{round_['id']}"), success="Round removed")
-                if result is not None:
-                    st.rerun()
+    if (
+        rounds
+        and all(round_["status"] == "complete" for round_ in rounds)
+        and app.get("pipeline_status") == "active_pipeline"
+        and st.button(
+            "Move to CEO review",
+            key=f"move-to-ceo-{app['id']}",
+            type="primary",
+            use_container_width=True,
+        )
+    ):
+        result = safe_api(
+            lambda: post_json(f"/api/v1/applications/{app['id']}/move-to-ceo"),
+            success="Application moved to CEO review",
+        )
+        if result:
+            st.rerun()
 with right:
     st.subheader("Schedule next round")
     with st.form("schedule-round"):

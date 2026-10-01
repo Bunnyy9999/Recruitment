@@ -118,8 +118,8 @@ The Streamlit frontend is implemented as a multipage app:
 - `frontend/main.py`: command center.
 - `frontend/pages/1_🎯_Hiring_Request.py`: job setup, JD, Google Form, and LinkedIn post.
 - `frontend/pages/2_🔄_Sync_&_Screen.py`: applicant sync, pool filters, and HR overrides.
-- `frontend/pages/3_🎙️_Interviews.py`: numbered rounds, scheduling, feedback, and MP3 upload.
-- `frontend/pages/4_💼_Executive.py`: dossier, CEO handoff, and final decision.
+- `frontend/pages/3_🎙️_Interviews.py`: numbered rounds, scheduling, feedback, MP3 upload, and the HR hand-off to CEO review after all rounds are complete.
+- `frontend/pages/4_💼_Executive.py`: CEO dossier review and final decision.
 - `frontend/ui.py`: shared styling and REST client.
 
 Generated JD and LinkedIn text is copied into the corresponding Streamlit editor state immediately after generation. The sync page shows candidate phone, selected-applicant form answers, and prior screening summaries separately from human remarks. Its sync-run table reports the latest run; the applicant table lists persisted applications for the selected job.

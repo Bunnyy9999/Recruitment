@@ -118,6 +118,7 @@ Google Forms settings read `GOOGLE_SERVICE_ACCOUNT_FILE` from the environment; r
    - HR opens a job and selects or searches for a specific applicant. The job-specific profile shows the AI sync pass/fail result with its explanation and the applicant's interview rounds.
    - Each round appears as a numbered entry (Technical Interview 1, Technical Interview 2, etc.) with its scheduled date, recording verification state, and human feedback.
    - **Schedule New Interview** creates the next pending round for that application, assigning the next `sequence_order` and scheduled date/time. It does not upload or process media.
+   - Once at least one interview round exists and all rounds are marked `complete`, HR uses **Move to CEO review** on the Interviews page. The application then leaves the active interview list and becomes available in Executive Review.
 3. **Manual Recording Upload**:
    - After the interview, HR opens that specific numbered round and uploads its recording. The upload is associated with the existing interview record, not just the candidate's global profile.
    - The backend validates the interview/application association, sanitizes path segments, saves the file, and verifies the saved file and database path. The directory date is the date the interview took place; the filename includes the round number:
@@ -128,8 +129,8 @@ Google Forms settings read `GOOGLE_SERVICE_ACCOUNT_FILE` from the environment; r
 5. **Jobs Dashboard Overview**: The application includes a portfolio dashboard that lists all jobs as cards with status and lets HR select a job to review the full applicant list. Each job view supports result filters for pass, fail, pending, and search by name/email/application ID.
 
 ### Phase 4: Final Executive Determination
-1. **Closing Review Hand-off**: Once all technical interview records are marked `complete`, HR moves the candidate to the `ceo_review` tracking phase.
-2. **The CEO Synthesis Dashboard**: The application compiles all data (screening results, verified interview recording paths, human feedback notes, and budget confirmations) into a single summary interface. It does not include generated transcripts or audio analysis.
+1. **Closing Review Hand-off**: Once all technical interview records are marked `complete`, HR moves the candidate to the `ceo_review` tracking phase using the button on the Interviews page. Executive Review is for the CEO's dossier review and final decision.
+2. **The CEO Synthesis Dashboard**: Executive Review compiles all data (screening results, verified interview recording paths, human feedback notes, and budget confirmations) into a single summary interface. It does not include generated transcripts or audio analysis.
 3. **Ultimate Closure Action**: The CEO reads the file summary and issues the binding pipeline close by clicking either "Approve for Hire" or "Reject Candidate". That dashboard action is the only human write that locks `final_decision` to `pass` or `fail` after interviews. Closing comments or rationale are committed directly to the `remarks` column. (AI screening may have already written `final_decision = fail` with `pipeline_status = failed_at_sync`; that is a system default, not a CEO action, and HR can reverse it as described in Phase 2.)
 
 ---
@@ -151,7 +152,7 @@ All paths are relative to `BACKEND_API_URL` (never hardcoded). JSON unless noted
 | GET | `/api/v1/jobs/{job_id}/applications` | hr, staff | Applications for one job (optional `pipeline_status` filter) |
 | GET | `/api/v1/candidates/{candidate_id}/history` | hr, staff | Sibling applications with screening summaries and human remarks |
 | POST | `/api/v1/applications/{application_id}/hr-override` | hr | Fail pool → `active_pipeline`, `final_decision=pending` |
-| POST | `/api/v1/applications/{application_id}/move-to-ceo` | hr | After interviews complete → `ceo_review` |
+| POST | `/api/v1/applications/{application_id}/move-to-ceo` | hr | Interviews page hand-off after at least one round exists and all rounds are complete → `ceo_review` |
 | GET | `/api/v1/applications/{application_id}/dossier` | staff, hr | CEO synthesis payload |
 | POST | `/api/v1/applications/{application_id}/final-decision` | staff (CEO) | Lock `final_decision` pass/fail + remarks |
 | GET | `/api/v1/applications/{application_id}/interviews` | hr, staff | Numbered interview rounds for the application, in sequence order |
