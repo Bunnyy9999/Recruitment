@@ -11,6 +11,8 @@ from backend.app.schemas.candidates_schema import (
     ApplicationApplicantPage,
     ExecutiveWorkspace,
     FormSyncResult,
+    JobDashboardFilter,
+    JobDashboardPage,
 )
 from backend.app.services.google_forms import GoogleFormsConfigurationError
 
@@ -169,6 +171,87 @@ class JobsApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["eligible_applicants"], [])
         get_workspace.assert_called_once_with(created.id, application_id=application_id)
+
+    def test_job_dashboard_route_forwards_filter_and_selected_application(self) -> None:
+        created = self.store.create_job(
+            JobCreate(
+                title="Data Scientist",
+                tech_stack="Python, SQL",
+                seniority="Mid",
+                required_experience="3 years",
+            )
+        )
+        application_id = uuid4()
+        page = JobDashboardPage(
+            job_exists=True,
+            total_count=1,
+            applicants=[],
+            selected_application=None,
+        )
+
+        with patch.object(
+            jobs_router.candidates_db,
+            "get_job_dashboard_page",
+            return_value=page,
+        ) as get_page:
+            response = self.client.get(
+                f"/api/v1/jobs/{created.id}/dashboard-applicants",
+                params={
+                    "decision_filter": "pending",
+                    "search": "Alex",
+                    "offset": 20,
+                    "limit": 20,
+                    "selected_application_id": str(application_id),
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["total_count"], 1)
+        get_page.assert_called_once_with(
+            created.id,
+            decision_filter=JobDashboardFilter.pending,
+            search="Alex",
+            offset=20,
+            limit=20,
+            selected_application_id=application_id,
+        )
+
+    def test_job_dashboard_applicants_route_returns_compact_page(self) -> None:
+        created = self.store.create_job(
+            JobCreate(
+                title="Data Scientist",
+                tech_stack="Python, SQL",
+                seniority="Mid",
+                required_experience="3 years",
+            )
+        )
+        page = JobDashboardPage(
+            job_exists=True,
+            total_count=0,
+            applicants=[],
+            selected_application=None,
+        )
+
+        with patch.object(
+            jobs_router.candidates_db,
+            "get_job_dashboard_page",
+            return_value=page,
+        ) as get_page:
+            response = self.client.get(
+                f"/api/v1/jobs/{created.id}/dashboard-applicants",
+                params={"decision_filter": "pending", "limit": 20},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["applicants"], [])
+        get_page.assert_called_once_with(
+            created.id,
+            decision_filter=JobDashboardFilter.pending,
+            search=None,
+            offset=0,
+            limit=20,
+            selected_application_id=None,
+        )
 
     def test_linkedin_blurb_requires_form_and_jd(self) -> None:
         created = self.store.create_job(

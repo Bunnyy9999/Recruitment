@@ -135,6 +135,35 @@ class ApplicationApplicantPage(BaseModel):
     job_exists: bool
 
 
+class JobDashboardFilter(str, Enum):
+    all = "all"
+    passed = "pass"
+    failed = "fail"
+    pending = "pending"
+
+
+class JobDashboardApplicant(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    candidate_name: str
+    email: EmailStr
+    phone: str | None = None
+    agent_decision: ScreeningDecision | None
+    pipeline_status: PipelineStatus
+    final_decision: FinalDecision
+    screening_summary: str | None
+
+
+class JobDashboardPage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    job_exists: bool
+    total_count: int = Field(ge=0)
+    applicants: list[JobDashboardApplicant]
+    selected_application: ApplicationRead | None
+
+
 class FormSyncItemStatus(str, Enum):
     synced = "synced"
     duplicate = "duplicate"

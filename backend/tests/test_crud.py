@@ -22,6 +22,7 @@ from backend.app.schemas.candidates_schema import (
     CandidateIdentityLookup,
     ApplicationScreeningResult,
     ExecutiveWorkspace,
+    JobDashboardFilter,
     PipelineStatus,
     ScreeningDecision,
 )
@@ -333,6 +334,65 @@ class CandidateCrudTests(TestCase):
                     "p_search": "Alex",
                     "p_offset": 20,
                     "p_limit": 20,
+                },
+            ),
+            client.events,
+        )
+
+    def test_job_dashboard_page_filters_and_preserves_selected_answers(self) -> None:
+        application = application_row()
+        application["form_responses"] = {"Portfolio": "https://example.com"}
+        client = FakeSupabaseClient(
+            [
+                [
+                    {
+                        "job_exists": True,
+                        "total_count": 2,
+                        "applicants": [
+                            {
+                                "id": application["id"],
+                                "candidate_name": "Alex Doe",
+                                "email": "alex@example.com",
+                                "phone": "+15551234567",
+                                "agent_decision": None,
+                                "pipeline_status": "active_pipeline",
+                                "final_decision": "pending",
+                                "screening_summary": None,
+                            }
+                        ],
+                        "selected_application": application,
+                    }
+                ]
+            ]
+        )
+
+        with patch.object(candidates_db, "supabase_client", client):
+            page = candidates_db.get_job_dashboard_page(
+                application["job_id"],
+                decision_filter=JobDashboardFilter.pending,
+                search="Alex",
+                offset=0,
+                limit=20,
+                selected_application_id=application["id"],
+            )
+
+        self.assertEqual(page.total_count, 2)
+        self.assertEqual(page.applicants[0].id, application["id"])
+        self.assertEqual(
+            page.selected_application.form_responses,
+            {"Portfolio": "https://example.com"},
+        )
+        self.assertIn(
+            (
+                "rpc",
+                "get_job_dashboard_page",
+                {
+                    "p_job_id": str(application["job_id"]),
+                    "p_decision_filter": "pending",
+                    "p_search": "Alex",
+                    "p_offset": 0,
+                    "p_limit": 20,
+                    "p_selected_application_id": str(application["id"]),
                 },
             ),
             client.events,

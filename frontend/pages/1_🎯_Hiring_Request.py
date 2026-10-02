@@ -2,13 +2,19 @@ import streamlit as st
 
 from ui import apply_styles, get_json, job_options, patch_json, post_json, safe_api, status_badge
 
+
+@st.cache_data(ttl=30, show_spinner=False)
+def load_jobs():
+    return get_json("/api/v1/jobs") or []
+
+
 apply_styles()
 
 st.markdown('<div class="eyebrow">Phase 1 · position setup</div>', unsafe_allow_html=True)
 st.title("Hiring Request")
 st.caption("Shape the role, review the draft, then publish the job-specific application link.")
 try:
-    jobs = get_json("/api/v1/jobs") or []
+    jobs = load_jobs()
 except Exception as error:
     jobs = []
     st.error(str(error))
@@ -39,6 +45,7 @@ with create_col:
             "university": university or None,
         }
         if safe_api(lambda: post_json("/api/v1/jobs", payload), success="Requisition created"):
+            load_jobs.clear()
             st.rerun()
 
 with studio_col:
@@ -61,6 +68,7 @@ with studio_col:
         new_status = st.selectbox("Status", ["draft", "posted", "closed"], index=["draft", "posted", "closed"].index(job["status"]), key=f"status-{job['id']}")
         if st.button("Save status", key=f"save-status-{job['id']}"):
             if safe_api(lambda: patch_json(f"/api/v1/jobs/{job['id']}", {"status": new_status}), success="Status saved"):
+                load_jobs.clear()
                 st.rerun()
     with tabs[1]:
         jd_key = f"jd-{job['id']}"
@@ -74,10 +82,12 @@ with studio_col:
         if a.button("Generate with Gemini", key=f"generate-{job['id']}", type="primary"):
             generated_job = safe_api(lambda: post_json(f"/api/v1/jobs/{job['id']}/generate-jd"), success="Draft generated")
             if generated_job:
+                load_jobs.clear()
                 st.session_state[pending_jd_key] = generated_job["jd_markdown"]
                 st.rerun()
         if b.button("Save edits", key=f"save-jd-{job['id']}"):
-            safe_api(lambda: patch_json(f"/api/v1/jobs/{job['id']}", {"jd_markdown": jd}), success="Job description saved")
+            if safe_api(lambda: patch_json(f"/api/v1/jobs/{job['id']}", {"jd_markdown": jd}), success="Job description saved"):
+                load_jobs.clear()
     with tabs[2]:
         questions_key = f"form-questions-{job['id']}"
         result_key = f"form-result-{job['id']}"
@@ -131,6 +141,7 @@ with studio_col:
             if st.button("Create Google Form", key=f"create-form-{job['id']}", type="primary"):
                 result = safe_api(lambda: post_json(f"/api/v1/jobs/{job['id']}/clone-form", {"questions": reviewed_questions}), success="Google Form created")
                 if result:
+                    load_jobs.clear()
                     st.session_state[result_key] = result
                     st.rerun()
 
@@ -158,7 +169,9 @@ with studio_col:
         if a.button("Generate post", key=f"blurb-generate-{job['id']}", type="primary"):
             generated_job = safe_api(lambda: post_json(f"/api/v1/jobs/{job['id']}/linkedin-blurb"), success="Post draft generated")
             if generated_job:
+                load_jobs.clear()
                 st.session_state[pending_blurb_key] = generated_job["linkedin_blurb"]
                 st.rerun()
         if b.button("Save post edits", key=f"blurb-save-{job['id']}"):
-            safe_api(lambda: patch_json(f"/api/v1/jobs/{job['id']}", {"linkedin_blurb": blurb}), success="Post copy saved")
+            if safe_api(lambda: patch_json(f"/api/v1/jobs/{job['id']}", {"linkedin_blurb": blurb}), success="Post copy saved"):
+                load_jobs.clear()

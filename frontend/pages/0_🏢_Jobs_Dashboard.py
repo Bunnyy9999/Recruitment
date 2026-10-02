@@ -2,12 +2,40 @@ import streamlit as st
 
 from ui import apply_styles, fmt_status, get_json, safe_api, status_badge
 
+APPLICANTS_PER_PAGE = 20
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def load_jobs():
+    return get_json("/api/v1/jobs") or []
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def load_job_dashboard_page(
+    job_id: str,
+    decision_filter: str,
+    search: str,
+    offset: int,
+    selected_application_id: str | None,
+):
+    params = {
+        "decision_filter": decision_filter,
+        "search": search or None,
+        "offset": offset,
+        "limit": APPLICANTS_PER_PAGE,
+        "selected_application_id": selected_application_id,
+    }
+    return get_json(
+        f"/api/v1/jobs/{job_id}/dashboard-applicants",
+        params={key: value for key, value in params.items() if value is not None},
+    )
+
 apply_styles()
 st.markdown('<div class="eyebrow">Portfolio overview</div>', unsafe_allow_html=True)
 st.title("Jobs Dashboard")
 
 try:
-    jobs = get_json("/api/v1/jobs") or []
+    jobs = load_jobs()
 except Exception as error:
     jobs = []
     st.error(str(error))
@@ -60,33 +88,52 @@ st.caption(
     )
 )
 
-applications = safe_api(lambda: get_json(f"/api/v1/jobs/{selected_job['id']}/applications")) or []
 filter_options = ["All", "Pass", "Fail", "Pending"]
 selected_filter = st.segmented_control("Applicant filter", options=filter_options, default="All")
-search = st.text_input("Search applicants", placeholder="Name, email, or application ID")
+search_state_key = f"job-dashboard-search-{selected_job['id']}"
+with st.form(f"job-dashboard-search-form-{selected_job['id']}"):
+    search_input = st.text_input(
+        "Search applicants",
+        placeholder="Name, email, or application ID",
+        value=st.session_state.get(search_state_key, ""),
+        max_chars=200,
+    )
+    search_submitted = st.form_submit_button("Search")
+if search_submitted:
+    st.session_state[search_state_key] = search_input.strip()
+search = st.session_state.get(search_state_key, "")
 
-if selected_filter == "Pass":
-    applications = [item for item in applications if item.get("agent_decision") == "pass"]
-elif selected_filter == "Fail":
-    applications = [item for item in applications if item.get("agent_decision") == "fail"]
-elif selected_filter == "Pending":
-    applications = [
-        item
-        for item in applications
-        if item.get("agent_decision") in {None, "pending"} or item.get("final_decision") == "pending"
-    ]
+page_state_key = f"job-dashboard-page-{selected_job['id']}"
+query_state_key = f"job-dashboard-query-{selected_job['id']}"
+selected_application_key = f"job-dashboard-applicant-{selected_job['id']}"
+query_signature = (selected_filter, search)
+if st.session_state.get(query_state_key) != query_signature:
+    st.session_state[query_state_key] = query_signature
+    st.session_state[page_state_key] = 0
+    st.session_state.pop(selected_application_key, None)
 
-if search.strip():
-    needle = search.strip().casefold()
-    applications = [
-        item
-        for item in applications
-        if needle in " ".join([item.get("candidate_name", ""), item.get("email", ""), item.get("id", "")]).casefold()
-    ]
+page_index = max(st.session_state.get(page_state_key, 0), 0)
+page_result = safe_api(
+    lambda: load_job_dashboard_page(
+        str(selected_job["id"]),
+        selected_filter.casefold(),
+        search,
+        page_index * APPLICANTS_PER_PAGE,
+        st.session_state.get(selected_application_key),
+    )
+) or {}
+applicants = page_result.get("applicants", [])
+total_count = page_result.get("total_count", 0)
 
-if not applications:
+if total_count == 0:
     st.info("No applicants match this job and filter combination.")
     st.stop()
+
+page_count = (total_count + APPLICANTS_PER_PAGE - 1) // APPLICANTS_PER_PAGE
+if page_index >= page_count:
+    st.session_state[page_state_key] = page_count - 1
+    st.session_state.pop(selected_application_key, None)
+    st.rerun()
 
 app_rows = [
     {
@@ -98,31 +145,62 @@ app_rows = [
         "Final": fmt_status(item.get("final_decision")),
         "Summary": item.get("screening_summary") or "No summary",
     }
-    for item in applications
+    for item in applicants
 ]
 
 st.dataframe(app_rows, hide_index=True, use_container_width=True)
 
+previous_col, page_info_col, next_col = st.columns([1, 2, 1])
+with previous_col:
+    if st.button(
+        "Previous",
+        disabled=page_index == 0,
+        key=f"job-dashboard-previous-{selected_job['id']}",
+        use_container_width=True,
+    ):
+        st.session_state[page_state_key] = page_index - 1
+        st.session_state.pop(selected_application_key, None)
+        st.rerun()
+with page_info_col:
+    first_applicant = page_index * APPLICANTS_PER_PAGE + 1
+    last_applicant = min((page_index + 1) * APPLICANTS_PER_PAGE, total_count)
+    st.caption(
+        f"Applicants {first_applicant}-{last_applicant} of {total_count} · "
+        f"Page {page_index + 1} of {page_count}"
+    )
+with next_col:
+    if st.button(
+        "Next",
+        disabled=page_index >= page_count - 1,
+        key=f"job-dashboard-next-{selected_job['id']}",
+        use_container_width=True,
+    ):
+        st.session_state[page_state_key] = page_index + 1
+        st.session_state.pop(selected_application_key, None)
+        st.rerun()
+
 selected_application_id = st.selectbox(
     "Open applicant details",
-    options=[item["id"] for item in applications],
+    options=[item["id"] for item in applicants],
     format_func=lambda item_id: next(
-        (item.get("candidate_name") or "Unknown applicant" for item in applications if item["id"] == item_id),
+        (item.get("candidate_name") or "Unknown applicant" for item in applicants if item["id"] == item_id),
         "Unknown applicant",
     ),
+    key=selected_application_key,
 )
-selected_application = next((item for item in applications if item["id"] == selected_application_id), applications[0])
+selected_application = page_result.get("selected_application")
 
-with st.container(border=True):
-    st.subheader(selected_application.get("candidate_name") or "Applicant details")
-    st.caption(selected_application.get("email") or "No email")
-    st.write(f"Pipeline: {fmt_status(selected_application.get('pipeline_status'))}")
-    st.write(f"Screening: {fmt_status(selected_application.get('agent_decision'))}")
-    st.write(f"Final decision: {fmt_status(selected_application.get('final_decision'))}")
-    st.write(selected_application.get("screening_summary") or "No screening summary recorded.")
+if selected_application:
+    with st.container(border=True):
+        st.subheader(selected_application.get("candidate_name") or "Applicant details")
+        st.caption(selected_application.get("email") or "No email")
+        st.write(f"Pipeline: {fmt_status(selected_application.get('pipeline_status'))}")
+        st.write(f"Screening: {fmt_status(selected_application.get('agent_decision'))}")
+        st.write(f"Final decision: {fmt_status(selected_application.get('final_decision'))}")
+        st.write(selected_application.get("screening_summary") or "No screening summary recorded.")
 
-    if selected_application.get("form_responses"):
-        st.markdown("**Form responses**")
-        for question, answer in selected_application["form_responses"].items():
-            st.markdown(f"**{question}**")
-            st.write(answer)
+        if selected_application.get("form_responses"):
+            st.markdown("**Form responses**")
+            for question, answer in selected_application["form_responses"].items():
+                st.markdown(f"**{question}**")
+                st.write(answer)

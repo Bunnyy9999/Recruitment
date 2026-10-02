@@ -16,6 +16,8 @@ from backend.app.schemas.candidates_schema import (
     CandidateIdentityLookup,
     CandidateRead,
     ExecutiveWorkspace,
+    JobDashboardFilter,
+    JobDashboardPage,
     ApplicationScreeningResult,
     ScreeningDecision,
     ApplicationScreeningResult,
@@ -508,5 +510,43 @@ def get_executive_workspace(
             "selected_application_exists": row.get("selected_application_exists", False),
             "eligible_applicants": row.get("eligible_applicants") or [],
             "dossier": row.get("dossier"),
+        }
+    )
+
+
+def get_job_dashboard_page(
+    job_id: UUID,
+    *,
+    decision_filter: JobDashboardFilter = JobDashboardFilter.all,
+    search: str | None = None,
+    offset: int = 0,
+    limit: int = 20,
+    selected_application_id: UUID | None = None,
+) -> JobDashboardPage:
+    rows = execute_query(
+        supabase_client.rpc(
+            "get_job_dashboard_page",
+            {
+                "p_job_id": str(job_id),
+                "p_decision_filter": decision_filter.value,
+                "p_search": search,
+                "p_offset": offset,
+                "p_limit": limit,
+                "p_selected_application_id": (
+                    str(selected_application_id) if selected_application_id else None
+                ),
+            },
+        ),
+        operation="get jobs dashboard page",
+    )
+    if len(rows) != 1:
+        raise DatabaseOperationError("get jobs dashboard page returned an invalid row count")
+    row = rows[0]
+    return JobDashboardPage.model_validate(
+        {
+            "job_exists": row.get("job_exists", False),
+            "total_count": row.get("total_count", 0),
+            "applicants": row.get("applicants") or [],
+            "selected_application": row.get("selected_application"),
         }
     )

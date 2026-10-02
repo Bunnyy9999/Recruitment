@@ -23,6 +23,8 @@ from backend.app.schemas.candidates_schema import (
     ApplicationApplicantRead,
     ExecutiveWorkspace,
     FormSyncResult,
+    JobDashboardFilter,
+    JobDashboardPage,
     PipelineStatus,
     ScreeningDecision,
 )
@@ -242,6 +244,29 @@ def executive_workspace_route(
     if not workspace.job_exists:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
     return workspace
+
+
+@router.get("/{job_id}/dashboard-applicants", response_model=JobDashboardPage)
+def job_dashboard_applicants_route(
+    job_id: UUID,
+    *,
+    decision_filter: JobDashboardFilter = JobDashboardFilter.all,
+    search: str | None = Query(default=None, max_length=200),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    selected_application_id: UUID | None = None,
+) -> JobDashboardPage:
+    page = candidates_db.get_job_dashboard_page(
+        job_id,
+        decision_filter=decision_filter,
+        search=search,
+        offset=offset,
+        limit=limit,
+        selected_application_id=selected_application_id,
+    )
+    if not page.job_exists:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+    return page
 
 
 @router.post("/{job_id}/sync", response_model=FormSyncResult)
