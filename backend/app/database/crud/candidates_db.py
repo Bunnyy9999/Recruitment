@@ -8,12 +8,14 @@ from backend.app.database.crud.errors import (
 from backend.app.schemas.candidates_schema import (
     ApplicationCreate,
     ApplicationDashboardRecord,
+    ApplicationApplicantPage,
     ApplicationApplicantRead,
     ApplicationRead,
     CandidateCreate,
     CandidateHistoryRecord,
     CandidateIdentityLookup,
     CandidateRead,
+    ExecutiveWorkspace,
     ApplicationScreeningResult,
     ScreeningDecision,
     ApplicationScreeningResult,
@@ -231,6 +233,40 @@ def list_job_applications(
     return applications
 
 
+def list_job_applicants_page(
+    job_id: UUID,
+    *,
+    agent_decision: ScreeningDecision | None = None,
+    has_other_applications: bool | None = None,
+    search: str | None = None,
+    offset: int = 0,
+    limit: int = 20,
+) -> ApplicationApplicantPage:
+    rows = execute_query(
+        supabase_client.rpc(
+            "list_job_applicants_page",
+            {
+                "p_job_id": str(job_id),
+                "p_agent_decision": agent_decision.value if agent_decision else None,
+                "p_has_other_applications": has_other_applications,
+                "p_search": search,
+                "p_offset": offset,
+                "p_limit": limit,
+            },
+        ),
+        operation="list paginated job applicants",
+    )
+    if len(rows) != 1:
+        raise DatabaseOperationError("list paginated job applicants returned an invalid row count")
+    return ApplicationApplicantPage.model_validate(
+        {
+            "items": rows[0].get("applicants") or [],
+            "total_count": rows[0].get("total_count", 0),
+            "job_exists": rows[0].get("job_exists", False),
+        }
+    )
+
+
 def get_candidate_history(candidate_id: UUID) -> list[CandidateHistoryRecord]:
     rows = execute_query(
         supabase_client.table("applications")
@@ -446,3 +482,31 @@ def save_final_decision(
         operation="save final application decision",
     )
     return ApplicationRead.model_validate(rows[0]) if rows else None
+
+
+def get_executive_workspace(
+    job_id: UUID,
+    *,
+    application_id: UUID | None = None,
+) -> ExecutiveWorkspace:
+    rows = execute_query(
+        supabase_client.rpc(
+            "get_executive_workspace",
+            {
+                "p_job_id": str(job_id),
+                "p_application_id": str(application_id) if application_id else None,
+            },
+        ),
+        operation="get executive workspace",
+    )
+    if len(rows) != 1:
+        raise DatabaseOperationError("get executive workspace returned an invalid row count")
+    row = rows[0]
+    return ExecutiveWorkspace.model_validate(
+        {
+            "job_exists": row.get("job_exists", False),
+            "selected_application_exists": row.get("selected_application_exists", False),
+            "eligible_applicants": row.get("eligible_applicants") or [],
+            "dossier": row.get("dossier"),
+        }
+    )

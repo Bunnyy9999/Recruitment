@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from backend.app.database.crud import jobs_db
 from backend.app.database.crud import candidates_db
@@ -19,9 +19,12 @@ from backend.app.schemas.google_forms_schema import (
 )
 from backend.app.prompts.form_prompts import FORM_QUESTION_SYSTEM_PROMPT, build_form_questions_user_prompt
 from backend.app.schemas.candidates_schema import (
+    ApplicationApplicantPage,
     ApplicationApplicantRead,
+    ExecutiveWorkspace,
     FormSyncResult,
     PipelineStatus,
+    ScreeningDecision,
 )
 from backend.app.services.ai.gemini_flash import GeminiFlashProvider
 from backend.app.services.google_forms import (
@@ -201,6 +204,44 @@ def list_job_applications_route(
     if get_jobs_store().get_job(job_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
     return candidates_db.list_job_applications(job_id, pipeline_status=pipeline_status)
+
+
+@router.get("/{job_id}/applicants", response_model=ApplicationApplicantPage)
+def list_job_applicants_page_route(
+    job_id: UUID,
+    *,
+    agent_decision: ScreeningDecision | None = None,
+    has_other_applications: bool | None = None,
+    search: str | None = Query(default=None, max_length=200),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> ApplicationApplicantPage:
+    page = candidates_db.list_job_applicants_page(
+        job_id,
+        agent_decision=agent_decision,
+        has_other_applications=has_other_applications,
+        search=search,
+        offset=offset,
+        limit=limit,
+    )
+    if not page.job_exists:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+    return page
+
+
+@router.get("/{job_id}/executive-workspace", response_model=ExecutiveWorkspace)
+def executive_workspace_route(
+    job_id: UUID,
+    *,
+    application_id: UUID | None = None,
+) -> ExecutiveWorkspace:
+    workspace = candidates_db.get_executive_workspace(
+        job_id,
+        application_id=application_id,
+    )
+    if not workspace.job_exists:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+    return workspace
 
 
 @router.post("/{job_id}/sync", response_model=FormSyncResult)

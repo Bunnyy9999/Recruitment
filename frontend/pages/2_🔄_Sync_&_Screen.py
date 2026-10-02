@@ -7,6 +7,40 @@ APPLICANTS_PER_PAGE = 20
 apply_styles()
 
 
+@st.cache_data(ttl=30, show_spinner=False)
+def load_jobs():
+    return get_json("/api/v1/jobs") or []
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def load_applicant_page(
+    job_id: str,
+    selected_filter: str,
+    history_filter: str,
+    search: str,
+    offset: int,
+):
+    params = {
+        "agent_decision": {"Pass": "pass", "Fail": "fail"}.get(selected_filter),
+        "has_other_applications": {
+            "Has applications for other jobs": True,
+            "No applications for other jobs": False,
+        }.get(history_filter),
+        "search": search or None,
+        "offset": offset,
+        "limit": APPLICANTS_PER_PAGE,
+    }
+    return get_json(
+        f"/api/v1/jobs/{job_id}/applicants",
+        params={key: value for key, value in params.items() if value is not None},
+    )
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def load_candidate_history(candidate_id: str):
+    return get_json(f"/api/v1/candidates/{candidate_id}/history") or []
+
+
 def applicant_phone(application):
     phone = application.get("phone")
     if phone:
@@ -21,7 +55,7 @@ def applicant_phone(application):
 st.markdown('<div class="eyebrow">Phase 2 · sync and screening</div>', unsafe_allow_html=True)
 st.title("Sync & Screen")
 try:
-    jobs = get_json("/api/v1/jobs") or []
+    jobs = load_jobs()
 except Exception as error:
     jobs = []
     st.error(str(error))
@@ -38,6 +72,7 @@ with sync_col:
     if st.button("Sync all applicants", type="primary", use_container_width=True):
         result = safe_api(lambda: post_json(f"/api/v1/jobs/{job['id']}/sync"))
         if result is not None:
+            load_applicant_page.clear()
             st.success(
                 f"Checked {result['total_responses']} responses: "
                 f"{result['synced']} synced, {result['skipped_duplicates']} duplicates, "
@@ -81,39 +116,40 @@ with filter_col:
         ],
         key=f"application-history-filter-{job['id']}",
     )
-    search = st.text_input("Search applicants", placeholder="Name, email, or application ID")
+    search = st.text_input(
+        "Search applicants",
+        placeholder="Name, email, or application ID",
+        max_chars=200,
+    )
 
-applications = safe_api(lambda: get_json(f"/api/v1/jobs/{job['id']}/applications")) or []
-if selected_filter == "Pass":
-    applications = [item for item in applications if item.get("agent_decision") == "pass"]
-elif selected_filter == "Fail":
-    applications = [item for item in applications if item.get("agent_decision") == "fail"]
-if history_filter == "Has applications for other jobs":
-    applications = [item for item in applications if item.get("has_other_applications")]
-elif history_filter == "No applications for other jobs":
-    applications = [item for item in applications if not item.get("has_other_applications")]
-if search.strip():
-    needle = search.strip().casefold()
-    applications = [
-        item
-        for item in applications
-        if needle in " ".join(
-            [
-                item.get("candidate_name", ""),
-                item.get("email", ""),
-                item.get("id", ""),
-            ]
-        ).casefold()
-    ]
-
-if not applications:
+page_state_key = f"applicant-page-{job['id']}"
+query_signature = (selected_filter, history_filter, search.strip())
+signature_key = f"applicant-query-{job['id']}"
+if st.session_state.get(signature_key) != query_signature:
+    st.session_state[signature_key] = query_signature
+    st.session_state[page_state_key] = 0
+page_index = max(st.session_state.get(page_state_key, 0), 0)
+st.session_state[page_state_key] = page_index
+page_result = safe_api(
+    lambda: load_applicant_page(
+        str(job["id"]),
+        selected_filter,
+        history_filter,
+        search.strip(),
+        page_index * APPLICANTS_PER_PAGE,
+    )
+) or {}
+applications = page_result.get("items", [])
+total_count = page_result.get("total_count", 0)
+if total_count == 0:
     st.info("No applicants match this view.")
     st.stop()
 
-page_state_key = f"applicant-page-{job['id']}"
-page_count = (len(applications) + APPLICANTS_PER_PAGE - 1) // APPLICANTS_PER_PAGE
-page_index = min(max(st.session_state.get(page_state_key, 0), 0), page_count - 1)
-st.session_state[page_state_key] = page_index
+page_count = (total_count + APPLICANTS_PER_PAGE - 1) // APPLICANTS_PER_PAGE
+if page_index >= page_count:
+    st.session_state[page_state_key] = page_count - 1
+    st.rerun()
+
 previous_col, page_info_col, next_col = st.columns([1, 2, 1])
 with previous_col:
     if st.button(
@@ -126,9 +162,9 @@ with previous_col:
         st.rerun()
 with page_info_col:
     first_applicant = page_index * APPLICANTS_PER_PAGE + 1
-    last_applicant = min((page_index + 1) * APPLICANTS_PER_PAGE, len(applications))
+    last_applicant = min((page_index + 1) * APPLICANTS_PER_PAGE, total_count)
     st.caption(
-        f"Applicants {first_applicant}-{last_applicant} of {len(applications)} · "
+        f"Applicants {first_applicant}-{last_applicant} of {total_count} · "
         f"Page {page_index + 1} of {page_count}"
     )
 with next_col:
@@ -141,8 +177,7 @@ with next_col:
         st.session_state[page_state_key] = page_index + 1
         st.rerun()
 
-page_start = page_index * APPLICANTS_PER_PAGE
-page_applications = applications[page_start : page_start + APPLICANTS_PER_PAGE]
+page_applications = applications
 table_rows = [
     {
         "Applicant": item.get("candidate_name", "Unknown applicant"),
@@ -161,7 +196,7 @@ table_event = st.dataframe(
     use_container_width=True,
     on_select="rerun",
     selection_mode="single-row",
-    key=f"applicant-table-{job['id']}-{page_index}",
+    key=f"applicant-table-{job['id']}-{page_index}-{selected_filter}-{history_filter}-{search.strip()}",
 )
 selected_rows = table_event.selection.rows
 selected_application = page_applications[selected_rows[0]] if selected_rows else None
@@ -180,9 +215,7 @@ if selected_application:
                 st.write(answer)
 
     history = safe_api(
-        lambda: get_json(
-            f"/api/v1/candidates/{selected_application['candidate_id']}/history"
-        )
+        lambda: load_candidate_history(str(selected_application["candidate_id"]))
     ) or []
     previous_applications = [
         item for item in history
@@ -218,4 +251,6 @@ if selected_application:
                 ),
                 success="Application restored",
             ):
+                load_applicant_page.clear()
+                load_candidate_history.clear()
                 st.rerun()

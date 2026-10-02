@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import (
@@ -126,6 +127,14 @@ class ApplicationApplicantRead(ApplicationRead):
     has_other_applications: bool = False
 
 
+class ApplicationApplicantPage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[ApplicationApplicantRead]
+    total_count: int = Field(ge=0)
+    job_exists: bool
+
+
 class FormSyncItemStatus(str, Enum):
     synced = "synced"
     duplicate = "duplicate"
@@ -211,3 +220,21 @@ class ApplicationDossier(BaseModel):
 
     application: ApplicationRead
     interviews: list[InterviewRoundRead]
+
+
+class ExecutiveApplicantOption(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    candidate_name: str
+    email: EmailStr
+    pipeline_status: Literal["active_pipeline", "pending_ceo_decision"]
+
+
+class ExecutiveWorkspace(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    job_exists: bool
+    selected_application_exists: bool
+    eligible_applicants: list[ExecutiveApplicantOption]
+    dossier: ApplicationDossier | None

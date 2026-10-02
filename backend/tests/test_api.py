@@ -1,9 +1,15 @@
 from unittest import TestCase
+from unittest.mock import patch
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
 from backend.app.api.router import api_router, api_v1_router
 from backend.app.main import app
+from backend.app.api.v1 import dashboard as dashboard_router
+from backend.app.api.v1 import interviews as interviews_router
+from backend.app.schemas.jobs_schema import CommandCenterSummary
+from backend.app.schemas.interviews_schema import InterviewWorkspace
 
 
 class FastAPIAssemblyTests(TestCase):
@@ -23,4 +29,58 @@ class FastAPIAssemblyTests(TestCase):
         self.assertIn("/health", paths)
         self.assertTrue(all(path.startswith(("/health", "/api/v1/")) for path in paths))
         self.assertIn("/api/v1/jobs/{job_id}/sync", paths)
+        self.assertIn("/api/v1/jobs/{job_id}/interview-workspace", paths)
         self.assertIn("/api/v1/applications/{application_id}/hr-override", paths)
+        self.assertIn("/api/v1/dashboard/summary", paths)
+
+    def test_command_center_summary_returns_aggregated_payload(self) -> None:
+        summary = CommandCenterSummary(
+            jobs=[],
+            application_count=12,
+            active_pipeline_count=5,
+            ceo_decision_count=2,
+        )
+        original = dashboard_router.dashboard_db.get_command_center_summary
+        dashboard_router.dashboard_db.get_command_center_summary = lambda: summary
+        try:
+            with TestClient(app) as client:
+                response = client.get("/api/v1/dashboard/summary")
+        finally:
+            dashboard_router.dashboard_db.get_command_center_summary = original
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "jobs": [],
+                "application_count": 12,
+                "active_pipeline_count": 5,
+                "ceo_decision_count": 2,
+            },
+        )
+
+    def test_interview_workspace_route_returns_combined_read(self) -> None:
+        job_id = uuid4()
+        application_id = uuid4()
+        workspace = InterviewWorkspace(
+            job_exists=True,
+            selected_application_exists=True,
+            applicants=[],
+            rounds=[],
+        )
+
+        with patch.object(
+            interviews_router.interviews_db,
+            "get_interview_workspace",
+            return_value=workspace,
+        ) as get_workspace:
+            with TestClient(app) as client:
+                response = client.get(
+                    f"/api/v1/jobs/{job_id}/interview-workspace",
+                    params={"application_id": str(application_id)},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["applicants"], [])
+        self.assertEqual(response.json()["rounds"], [])
+        get_workspace.assert_called_once_with(job_id, application_id=application_id)

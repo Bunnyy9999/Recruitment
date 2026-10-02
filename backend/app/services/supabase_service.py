@@ -47,5 +47,8 @@ class LazySupabaseClient:
     def table(self, table_name: str) -> Any:
         return self._get_client().table(table_name)
 
+    def rpc(self, function_name: str, params: dict[str, Any]) -> Any:
+        return self._get_client().rpc(function_name, params)
+
 
 supabase_client = LazySupabaseClient()

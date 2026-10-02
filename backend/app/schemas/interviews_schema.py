@@ -1,8 +1,9 @@
 from datetime import date
 from enum import Enum
+from typing import Literal
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
 class InterviewStatus(str, Enum):
@@ -42,6 +43,24 @@ class InterviewRoundRead(BaseModel):
     feedback: str | None
     status: InterviewStatus
     created_at: AwareDatetime
+
+
+class InterviewApplicantOption(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    candidate_name: str
+    email: EmailStr
+    pipeline_status: Literal["active_pipeline"]
+
+
+class InterviewWorkspace(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    job_exists: bool
+    selected_application_exists: bool
+    applicants: list[InterviewApplicantOption]
+    rounds: list[InterviewRoundRead]
 
 
 class InterviewRecordingResult(BaseModel):

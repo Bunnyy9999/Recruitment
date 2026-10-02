@@ -7,7 +7,11 @@ from fastapi.testclient import TestClient
 from backend.app.api.router import app
 from backend.app.api.v1 import jobs as jobs_router
 from backend.app.schemas.jobs_schema import JobCreate, JobPatch, JobRead, JobStatus
-from backend.app.schemas.candidates_schema import FormSyncResult
+from backend.app.schemas.candidates_schema import (
+    ApplicationApplicantPage,
+    ExecutiveWorkspace,
+    FormSyncResult,
+)
 from backend.app.services.google_forms import GoogleFormsConfigurationError
 
 
@@ -100,6 +104,71 @@ class JobsApiTests(TestCase):
         payload = response.json()
         self.assertEqual(payload["status"], "posted")
         self.assertEqual(payload["jd_markdown"], "# JD")
+
+    def test_paginated_applicant_route_forwards_filters(self) -> None:
+        created = self.store.create_job(
+            JobCreate(
+                title="Data Scientist",
+                tech_stack="Python, SQL",
+                seniority="Mid",
+                required_experience="3 years",
+            )
+        )
+        page = ApplicationApplicantPage(items=[], total_count=0, job_exists=True)
+
+        with patch.object(
+            jobs_router.candidates_db,
+            "list_job_applicants_page",
+            return_value=page,
+        ) as list_page:
+            response = self.client.get(
+                f"/api/v1/jobs/{created.id}/applicants",
+                params={
+                    "agent_decision": "pass",
+                    "has_other_applications": "true",
+                    "search": "Alex",
+                    "offset": 20,
+                    "limit": 20,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["items"], [])
+        list_page.assert_called_once()
+        self.assertEqual(list_page.call_args.kwargs["search"], "Alex")
+        self.assertEqual(list_page.call_args.kwargs["offset"], 20)
+        self.assertEqual(list_page.call_args.kwargs["limit"], 20)
+
+    def test_executive_workspace_route_returns_combined_payload(self) -> None:
+        created = self.store.create_job(
+            JobCreate(
+                title="Data Scientist",
+                tech_stack="Python, SQL",
+                seniority="Mid",
+                required_experience="3 years",
+            )
+        )
+        application_id = uuid4()
+        workspace = ExecutiveWorkspace(
+            job_exists=True,
+            selected_application_exists=True,
+            eligible_applicants=[],
+            dossier=None,
+        )
+
+        with patch.object(
+            jobs_router.candidates_db,
+            "get_executive_workspace",
+            return_value=workspace,
+        ) as get_workspace:
+            response = self.client.get(
+                f"/api/v1/jobs/{created.id}/executive-workspace",
+                params={"application_id": str(application_id)},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["eligible_applicants"], [])
+        get_workspace.assert_called_once_with(created.id, application_id=application_id)
 
     def test_linkedin_blurb_requires_form_and_jd(self) -> None:
         created = self.store.create_job(

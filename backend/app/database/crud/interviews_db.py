@@ -4,12 +4,41 @@ from uuid import UUID
 from backend.app.database.crud.errors import DatabaseOperationError, execute_query
 from backend.app.schemas.interviews_schema import (
     InterviewRecordingResult,
+    InterviewWorkspace,
     InterviewRoundRead,
     InterviewRoundUpdate,
     InterviewScheduleRequest,
 )
 from backend.app.services.supabase_service import supabase_client
 from backend.app.utils.file_handler import verify_recording
+
+
+def get_interview_workspace(
+    job_id: UUID,
+    *,
+    application_id: UUID | None = None,
+) -> InterviewWorkspace:
+    rows = execute_query(
+        supabase_client.rpc(
+            "get_interview_workspace",
+            {
+                "p_job_id": str(job_id),
+                "p_application_id": str(application_id) if application_id else None,
+            },
+        ),
+        operation="get interview workspace",
+    )
+    if len(rows) != 1:
+        raise DatabaseOperationError("get interview workspace returned an invalid row count")
+    row = rows[0]
+    return InterviewWorkspace.model_validate(
+        {
+            "job_exists": row.get("job_exists", False),
+            "selected_application_exists": row.get("selected_application_exists", False),
+            "applicants": row.get("applicants") or [],
+            "rounds": row.get("rounds") or [],
+        }
+    )
 
 
 def list_interview_rounds(application_id: UUID) -> list[InterviewRoundRead]:

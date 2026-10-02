@@ -1,17 +1,34 @@
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 
 from backend.app.database.crud import candidates_db, interviews_db, jobs_db
 from backend.app.schemas.interviews_schema import (
     InterviewRoundRead,
     InterviewRoundUpdate,
     InterviewScheduleRequest,
+    InterviewWorkspace,
 )
 from backend.app.services.local_media_service import store_interview_recording
 
 router = APIRouter(tags=["interviews"])
+
+
+@router.get("/jobs/{job_id}/interview-workspace", response_model=InterviewWorkspace)
+def interview_workspace_route(
+    job_id: UUID,
+    application_id: UUID | None = Query(default=None),
+) -> InterviewWorkspace:
+    workspace = interviews_db.get_interview_workspace(
+        job_id,
+        application_id=application_id,
+    )
+    if not workspace.job_exists:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+    if application_id is not None and not workspace.selected_application_exists:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="active application not found")
+    return workspace
 
 
 @router.get("/applications/{application_id}/interviews", response_model=list[InterviewRoundRead])

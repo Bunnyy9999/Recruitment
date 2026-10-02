@@ -3,13 +3,13 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from uuid import UUID, uuid4
 
 from pydantic import AnyHttpUrl, SecretStr
 
 from backend.app.config import Settings
-from backend.app.database.crud import candidates_db, interviews_db, jobs_db
+from backend.app.database.crud import candidates_db, dashboard_db, interviews_db, jobs_db
 from backend.app.database.crud.errors import (
     AmbiguousCandidateMatchError,
     DatabaseOperationError,
@@ -21,6 +21,7 @@ from backend.app.schemas.candidates_schema import (
     CandidateCreate,
     CandidateIdentityLookup,
     ApplicationScreeningResult,
+    ExecutiveWorkspace,
     PipelineStatus,
     ScreeningDecision,
 )
@@ -98,6 +99,11 @@ class FakeSupabaseClient:
         self.events.append(("table", table_name))
         response = self.responses.pop(0)
         return FakeQuery(self, table_name, response)
+
+    def rpc(self, function_name: str, params: dict[str, object]) -> FakeQuery:
+        self.events.append(("rpc", function_name, params))
+        response = self.responses.pop(0)
+        return FakeQuery(self, function_name, response)
 
 
 def job_row() -> dict[str, object]:
@@ -194,6 +200,23 @@ class SupabaseServiceTests(TestCase):
         self.assertEqual(len(factory_calls), 1)
         self.assertEqual(factory_calls[0], ("https://project.supabase.co/", "service-role-test-key"))
 
+    def test_rpc_uses_the_lazily_created_client(self) -> None:
+        settings = Settings(
+            _env_file=None,
+            supabase_url="https://project.supabase.co",
+            supabase_service_role_key=SecretStr("service-role-test-key"),
+        )
+        client = FakeSupabaseClient([[{"value": 1}]])
+        lazy_client = LazySupabaseClient(
+            settings_provider=lambda: settings,
+            client_factory=lambda _url, _key: client,
+        )
+
+        result = lazy_client.rpc("get_summary", {}).execute()
+
+        self.assertEqual(result.data, [{"value": 1}])
+        self.assertIn(("rpc", "get_summary", {}), client.events)
+
     def test_missing_supabase_configuration_fails_on_first_use(self) -> None:
         settings = Settings(_env_file=None)
         lazy_client = LazySupabaseClient(settings_provider=lambda: settings)
@@ -203,6 +226,29 @@ class SupabaseServiceTests(TestCase):
 
 
 class JobCrudTests(TestCase):
+    def test_command_center_summary_calls_rpc_and_validates_result(self) -> None:
+        job = job_row()
+        client = Mock()
+        client.rpc.return_value.execute.return_value = SimpleNamespace(
+            data=[
+                {
+                    "jobs": [job],
+                    "application_count": 12,
+                    "active_pipeline_count": 5,
+                    "ceo_decision_count": 2,
+                }
+            ]
+        )
+
+        with patch.object(dashboard_db, "supabase_client", client):
+            summary = dashboard_db.get_command_center_summary()
+
+        client.rpc.assert_called_once_with("get_command_center_summary", {})
+        self.assertEqual(summary.jobs[0].id, job["id"])
+        self.assertEqual(summary.application_count, 12)
+        self.assertEqual(summary.active_pipeline_count, 5)
+        self.assertEqual(summary.ceo_decision_count, 2)
+
     def test_create_job_returns_validated_model(self) -> None:
         row = job_row()
         client = FakeSupabaseClient([[row]])
@@ -249,6 +295,85 @@ class JobCrudTests(TestCase):
 
 
 class CandidateCrudTests(TestCase):
+    def test_list_job_applicants_page_preserves_form_responses(self) -> None:
+        application = application_row()
+        application.update(
+            {
+                "candidate_name": "Alex Doe",
+                "email": "alex@example.com",
+                "phone": "+15551234567",
+                "has_other_applications": True,
+                "form_responses": {"Portfolio": "https://example.com"},
+            }
+        )
+        client = FakeSupabaseClient(
+            [[{"job_exists": True, "total_count": 41, "applicants": [application]}]]
+        )
+
+        with patch.object(candidates_db, "supabase_client", client):
+            page = candidates_db.list_job_applicants_page(
+                UUID(str(application["job_id"])),
+                agent_decision=ScreeningDecision.passed,
+                has_other_applications=True,
+                search="Alex",
+                offset=20,
+                limit=20,
+            )
+
+        self.assertEqual(page.total_count, 41)
+        self.assertEqual(page.items[0].form_responses, {"Portfolio": "https://example.com"})
+        self.assertIn(
+            (
+                "rpc",
+                "list_job_applicants_page",
+                {
+                    "p_job_id": str(application["job_id"]),
+                    "p_agent_decision": "pass",
+                    "p_has_other_applications": True,
+                    "p_search": "Alex",
+                    "p_offset": 20,
+                    "p_limit": 20,
+                },
+            ),
+            client.events,
+        )
+
+    def test_get_executive_workspace_preserves_dossier_rounds(self) -> None:
+        application = application_row()
+        round_ = interview_row(application["id"])
+        round_["local_audio_path"] = "recordings/job/candidate/20261002/technical_interview_1.mp3"
+        client = FakeSupabaseClient(
+            [
+                [
+                    {
+                        "job_exists": True,
+                        "selected_application_exists": True,
+                        "eligible_applicants": [
+                            {
+                                "id": application["id"],
+                                "candidate_name": "Alex Doe",
+                                "email": "alex@example.com",
+                                "pipeline_status": "active_pipeline",
+                            }
+                        ],
+                        "dossier": {"application": application, "interviews": [round_]},
+                    }
+                ]
+            ]
+        )
+
+        with patch.object(candidates_db, "supabase_client", client):
+            workspace = candidates_db.get_executive_workspace(
+                application["job_id"],
+                application_id=application["id"],
+            )
+
+        self.assertEqual(workspace.eligible_applicants[0].id, application["id"])
+        self.assertEqual(
+            workspace.dossier.interviews[0].local_audio_path,
+            round_["local_audio_path"],
+        )
+
     def test_create_candidate_returns_validated_model(self) -> None:
         row = candidate_row()
         client = FakeSupabaseClient([[row]])
@@ -552,6 +677,46 @@ class CandidateCrudTests(TestCase):
 
 
 class InterviewCrudTests(TestCase):
+    def test_get_interview_workspace_uses_single_rpc(self) -> None:
+        application_id = uuid4()
+        client = FakeSupabaseClient(
+            [
+                [
+                    {
+                        "job_exists": True,
+                        "selected_application_exists": True,
+                        "applicants": [
+                            {
+                                "id": application_id,
+                                "candidate_name": "Alex Doe",
+                                "email": "alex@example.com",
+                                "pipeline_status": "active_pipeline",
+                            }
+                        ],
+                        "rounds": [interview_row(application_id)],
+                    }
+                ]
+            ]
+        )
+        job_id = uuid4()
+
+        with patch.object(interviews_db, "supabase_client", client):
+            workspace = interviews_db.get_interview_workspace(
+                job_id,
+                application_id=application_id,
+            )
+
+        self.assertEqual(workspace.applicants[0].id, application_id)
+        self.assertEqual(workspace.rounds[0].application_id, application_id)
+        self.assertIn(
+            (
+                "rpc",
+                "get_interview_workspace",
+                {"p_job_id": str(job_id), "p_application_id": str(application_id)},
+            ),
+            client.events,
+        )
+
     def test_list_interview_rounds_orders_by_sequence(self) -> None:
         application_id = uuid4()
         row = interview_row(application_id, sequence_order=2)

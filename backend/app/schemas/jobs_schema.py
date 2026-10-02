@@ -66,3 +66,12 @@ class JobRead(BaseModel):
     linkedin_blurb: str | None
     status: JobStatus
     created_at: AwareDatetime
+
+
+class CommandCenterSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    jobs: list[JobRead]
+    application_count: int = Field(ge=0)
+    active_pipeline_count: int = Field(ge=0)
+    ceo_decision_count: int = Field(ge=0)

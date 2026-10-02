@@ -10,22 +10,18 @@ def command_center() -> None:
     st.markdown('<div class="eyebrow">Recruitment operations</div>', unsafe_allow_html=True)
     st.markdown("<div class='hero'><h1>Make the next great hire feel inevitable.</h1><p>A calm, evidence-led workspace for job setup, applicant decisions, interviews, and the final call.</p></div>", unsafe_allow_html=True)
     try:
-        jobs = get_json("/api/v1/jobs") or []
+        summary = get_json("/api/v1/dashboard/summary") or {}
+        jobs = summary.get("jobs", [])
     except Exception as error:
+        summary = {}
         jobs = []
         st.error(str(error))
 
-    applications = []
-    for job in jobs:
-        try:
-            applications.extend(get_json(f"/api/v1/jobs/{job['id']}/applications") or [])
-        except Exception:
-            continue
-
-    active = sum(item.get("pipeline_status") == "active_pipeline" for item in applications)
-    ceo = sum(item.get("pipeline_status") == "pending_ceo_decision" for item in applications)
+    application_count = summary.get("application_count", 0)
+    active = summary.get("active_pipeline_count", 0)
+    ceo = summary.get("ceo_decision_count", 0)
     cols = st.columns(4)
-    for col, value, label in zip(cols, [len(jobs), len(applications), active, ceo], ["Open requisitions", "Applications", "Active pipeline", "CEO decisions"]):
+    for col, value, label in zip(cols, [len(jobs), application_count, active, ceo], ["Open requisitions", "Applications", "Active pipeline", "CEO decisions"]):
         with col:
             st.markdown(f'<div class="metric"><div class="metric-value">{value}</div><div class="metric-label">{label}</div></div>', unsafe_allow_html=True)
 

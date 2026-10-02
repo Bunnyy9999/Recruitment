@@ -10,11 +10,25 @@ def delete_interview_round(interview_id: str) -> bool:
     return True
 
 
+@st.cache_data(ttl=30, show_spinner=False)
+def load_jobs():
+    return get_json("/api/v1/jobs") or []
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def load_interview_workspace(job_id: str, application_id: str | None):
+    params = {"application_id": application_id} if application_id else {}
+    return get_json(
+        f"/api/v1/jobs/{job_id}/interview-workspace",
+        params=params,
+    )
+
+
 apply_styles()
 st.markdown('<div class="eyebrow">Phase 3 · technical interviews</div>', unsafe_allow_html=True)
 st.title("Interviews")
 try:
-    jobs = get_json("/api/v1/jobs") or []
+    jobs = load_jobs()
 except Exception as error:
     jobs = []
     st.error(str(error))
@@ -23,16 +37,32 @@ if not options:
     st.info("Create a requisition first.")
     st.stop()
 job = options[st.selectbox("Requisition", list(options))]
-applications = safe_api(lambda: get_json(f"/api/v1/jobs/{job['id']}/applications?pipeline_status=active_pipeline")) or []
+applicant_key = f"interview-applicant-{job['id']}"
+selected_applicant_id = st.session_state.get(applicant_key)
+workspace = safe_api(
+    lambda: load_interview_workspace(str(job["id"]), selected_applicant_id)
+) or {}
+applications = workspace.get("applicants", [])
 if not applications:
     st.info("No active applicants are ready for interviews.")
     st.stop()
+applicants_by_id = {item["id"]: item for item in applications}
+if st.session_state.get(applicant_key) not in applicants_by_id:
+    st.session_state[applicant_key] = applications[0]["id"]
+    workspace = safe_api(
+        lambda: load_interview_workspace(str(job["id"]), applications[0]["id"])
+    ) or workspace
 app = st.selectbox(
     "Applicant",
-    options=applications,
-    format_func=lambda item: f"{item.get('candidate_name') or 'Unknown'} — {item.get('email') or 'no email'}",
+    options=list(applicants_by_id),
+    format_func=lambda applicant_id: (
+        f"{applicants_by_id[applicant_id].get('candidate_name') or 'Unknown'} — "
+        f"{applicants_by_id[applicant_id].get('email') or 'no email'}"
+    ),
+    key=applicant_key,
 )
-rounds = safe_api(lambda: get_json(f"/api/v1/applications/{app['id']}/interviews")) or []
+app = applicants_by_id[app]
+rounds = workspace.get("rounds", [])
 left, right = st.columns([1.35, 1])
 with left:
     st.subheader("Interview rounds")
@@ -67,6 +97,7 @@ with left:
                         success="Round saved",
                     )
                     if result:
+                        load_interview_workspace.clear()
                         st.rerun()
 
             if st.button("Remove round", key=f"delete-round-{round_['id']}", type="secondary"):
@@ -75,6 +106,7 @@ with left:
                     success="Round removed",
                 )
                 if result:
+                    load_interview_workspace.clear()
                     st.rerun()
     if (
         rounds
@@ -92,6 +124,7 @@ with left:
             success="Application moved to CEO review",
         )
         if result:
+            load_interview_workspace.clear()
             st.rerun()
 with right:
     st.subheader("Schedule next round")
@@ -103,4 +136,5 @@ with right:
         scheduled_at = datetime.combine(schedule_date, schedule_time, tzinfo=timezone.utc).isoformat()
         result = safe_api(lambda: post_json(f"/api/v1/applications/{app['id']}/interviews", {"scheduled_at": scheduled_at}), success="Next round scheduled")
         if result:
+            load_interview_workspace.clear()
             st.rerun()
