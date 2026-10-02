@@ -116,6 +116,7 @@ Migration `supabase/migrations/20260930000000_add_form_submission_data.sql` was 
 The Streamlit frontend is implemented as a multipage app:
 
 - `frontend/main.py`: command center.
+- `frontend/pages/0_🏢_Jobs_Dashboard.py`: portfolio view with server-side applicant filtering and pagination.
 - `frontend/pages/1_🎯_Hiring_Request.py`: job setup, JD, Google Form, and LinkedIn post.
 - `frontend/pages/2_🔄_Sync_&_Screen.py`: applicant sync, pool filters, and HR overrides.
 - `frontend/pages/3_🎙️_Interviews.py`: numbered rounds, scheduling, feedback, MP3 upload, and the HR hand-off to CEO review after all rounds are complete.
@@ -125,6 +126,21 @@ The Streamlit frontend is implemented as a multipage app:
 Generated JD and LinkedIn text is copied into the corresponding Streamlit editor state immediately after generation. The sync page shows candidate phone, selected-applicant form answers, and prior screening summaries separately from human remarks. Its sync-run table reports the latest run; the applicant table lists persisted applications for the selected job.
 
 The frontend has its own environment at `frontend/.venv`; Docker is not required for local testing.
+
+### Page Read Performance
+
+Page-oriented reads use PostgreSQL functions through FastAPI endpoints to avoid fetching complete applicant lists or making multiple database reads for a single view:
+
+- The command center gets its jobs and pipeline counts from `/api/v1/dashboard/summary`.
+- Sync filters and paginates applicants server-side (20 per UI page); original answers remain available for the rows on that page.
+- Jobs Dashboard filters/searches/paginates server-side and fetches the complete form answers only for the selected applicant. Its pending filter includes applications with no screening decision or a pending final decision.
+- Interviews combines active-applicant choices and selected interview rounds in a workspace read.
+- Executive Review combines eligible-applicant choices and the selected full dossier in a workspace read.
+- Hiring Request, Sync, Jobs Dashboard, Interviews, and Executive Review use short-lived Streamlit data caches. Pages clear relevant caches after mutations.
+
+Cache TTLs are 30 seconds for job lists and candidate history, 15 seconds for Sync and Jobs Dashboard applicant pages, and 10 seconds for interview and executive workspaces.
+
+The associated Supabase RPC functions and deployment migrations are listed in `db.md`. Apply outstanding migrations with `supabase db push`; use `npx --yes supabase@latest db push --dry-run` to preview them first. The backend suite currently passes 111 tests. The migrations must be applied before newly added page-read endpoints can use their functions.
 
 ### Local Run Commands
 

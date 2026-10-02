@@ -3,7 +3,8 @@
 ## Database Overview
 
 The database is PostgreSQL in Supabase. The initial migration creates four tables:
-`jobs`, `candidates`, `applications`, and `interviews`.
+`jobs`, `candidates`, `applications`, and `interviews`. Later migrations also add
+read-only PostgreSQL functions used by page-specific FastAPI endpoints.
 
 The follow-up migration adds Google Forms response tracking to `applications`.
 A later migration replaces numeric compensation bounds with text-based job criteria.
@@ -94,6 +95,20 @@ Each application can have only one interview for a given `sequence_order`.
 
 - `hr_passed_candidates_dashboard` shows applications in the active or CEO-decision pipeline with a pending final decision.
 - `hr_failed_candidates_dashboard` shows applications rejected during sync that have not been restored by HR.
+
+### Page read functions
+
+These `SECURITY INVOKER` functions are called by the backend through Supabase RPC. They consolidate page reads in PostgreSQL; Streamlit continues to call the versioned FastAPI endpoints.
+
+| Function | Migration | Purpose |
+| --- | --- | --- |
+| `get_command_center_summary()` | `20261002000000_command_center_summary.sql` | Returns jobs and total, active-pipeline, and CEO-decision counts. |
+| `list_job_applicants_page(...)` | `20261002000001_paginated_job_applicants.sql` | Filters and paginates Sync applicants, including original answers for the returned page. |
+| `get_interview_workspace(...)` | `20261002000002_interview_workspace.sql` | Returns compact active-applicant choices and rounds for the selected active application. |
+| `get_executive_workspace(...)` | `20261002000003_executive_workspace.sql` | Returns compact eligible-applicant choices and the selected application's full dossier. |
+| `get_job_dashboard_page(...)` | `20261002000004_jobs_dashboard_page.sql` | Returns compact filtered applicant rows and full data, including answers, only for the selected application. Its `pending` filter includes a missing agent decision or `final_decision = pending`. |
+
+The page-specific functions are granted to `service_role`; public, `anon`, and `authenticated` execution is revoked. Apply unapplied migrations from the repository root with `supabase db push` (or inspect first with `npx --yes supabase@latest db push --dry-run`).
 
 ## Google Forms Sync Workflow
 

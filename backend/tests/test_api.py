@@ -36,9 +36,19 @@ class FastAPIAssemblyTests(TestCase):
     def test_command_center_summary_returns_aggregated_payload(self) -> None:
         summary = CommandCenterSummary(
             jobs=[],
+            draft_job_count=1,
+            posted_job_count=3,
+            total_job_count=6,
+            open_job_count=3,
+            closed_job_count=2,
             application_count=12,
             active_pipeline_count=5,
             ceo_decision_count=2,
+            stage1_pass_count=8,
+            first_interview_scheduled_count=3,
+            second_interview_count=1,
+            successful_applicant_count=2,
+            ceo_failed_applicant_count=1,
         )
         original = dashboard_router.dashboard_db.get_command_center_summary
         dashboard_router.dashboard_db.get_command_center_summary = lambda: summary
@@ -53,9 +63,19 @@ class FastAPIAssemblyTests(TestCase):
             response.json(),
             {
                 "jobs": [],
+                "draft_job_count": 1,
+                "posted_job_count": 3,
+                "total_job_count": 6,
+                "open_job_count": 3,
+                "closed_job_count": 2,
                 "application_count": 12,
                 "active_pipeline_count": 5,
                 "ceo_decision_count": 2,
+                "stage1_pass_count": 8,
+                "first_interview_scheduled_count": 3,
+                "second_interview_count": 1,
+                "successful_applicant_count": 2,
+                "ceo_failed_applicant_count": 1,
             },
         )
 

@@ -54,7 +54,13 @@ with studio_col:
     if not options:
         st.info("Create your first requisition to begin.")
         st.stop()
-    job = options[st.selectbox("Select requisition", list(options))]
+    option_labels = list(options)
+    requested_job_id = st.session_state.get("selected_job_id")
+    selected_index = next(
+        (index for index, label in enumerate(option_labels) if options[label]["id"] == requested_job_id),
+        0,
+    )
+    job = options[st.selectbox("Select requisition", option_labels, index=selected_index, key="hiring-selected-job")]
     st.markdown(f"{status_badge(job['status'])}  **{job['title']}**", unsafe_allow_html=True)
     tabs = st.tabs(["Criteria", "Job description", "Application link", "LinkedIn post"])
     with tabs[0]:

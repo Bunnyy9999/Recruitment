@@ -72,6 +72,39 @@ class CommandCenterSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     jobs: list[JobRead]
+    draft_job_count: int = Field(ge=0)
+    posted_job_count: int = Field(ge=0)
+    total_job_count: int = Field(ge=0)
+    open_job_count: int = Field(ge=0)
+    closed_job_count: int = Field(ge=0)
     application_count: int = Field(ge=0)
     active_pipeline_count: int = Field(ge=0)
     ceo_decision_count: int = Field(ge=0)
+    stage1_pass_count: int = Field(ge=0)
+    first_interview_scheduled_count: int = Field(ge=0)
+    second_interview_count: int = Field(ge=0)
+    successful_applicant_count: int = Field(ge=0)
+    ceo_failed_applicant_count: int = Field(ge=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def derive_missing_job_counts(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+
+        payload = dict(value)
+        statuses = [
+            job.get("status") if isinstance(job, dict) else getattr(job, "status", None)
+            for job in payload.get("jobs", [])
+        ]
+        if "draft_job_count" not in payload:
+            payload["draft_job_count"] = sum(status == JobStatus.draft for status in statuses)
+        if "posted_job_count" not in payload:
+            payload["posted_job_count"] = sum(status == JobStatus.posted for status in statuses)
+        if "total_job_count" not in payload:
+            payload["total_job_count"] = (
+                payload["draft_job_count"]
+                + payload["posted_job_count"]
+                + payload.get("closed_job_count", 0)
+            )
+        return payload

@@ -88,8 +88,27 @@ st.caption(
     )
 )
 
-filter_options = ["All", "Pass", "Fail", "Pending"]
-selected_filter = st.segmented_control("Applicant filter", options=filter_options, default="All")
+filter_options = {
+    "All": "all",
+    "Sync pass": "pass",
+    "Sync fail": "fail",
+    "Active pipeline": "active_pipeline",
+    "CEO review": "ceo_review",
+    "Hired": "hired",
+    "Failed at CEO": "failed_at_ceo",
+    "1st interview scheduled": "first_interview_scheduled",
+    "2nd interview": "second_interview",
+}
+filter_key = f"job-dashboard-filter-{selected_job['id']}"
+requested_filter = st.session_state.pop("dashboard_applicant_filter", None)
+if requested_filter in filter_options.values():
+    st.session_state[filter_key] = next(label for label, value in filter_options.items() if value == requested_filter)
+selected_filter = st.selectbox(
+    "Applicant filter",
+    options=list(filter_options),
+    index=0,
+    key=filter_key,
+)
 search_state_key = f"job-dashboard-search-{selected_job['id']}"
 with st.form(f"job-dashboard-search-form-{selected_job['id']}"):
     search_input = st.text_input(
@@ -106,7 +125,7 @@ search = st.session_state.get(search_state_key, "")
 page_state_key = f"job-dashboard-page-{selected_job['id']}"
 query_state_key = f"job-dashboard-query-{selected_job['id']}"
 selected_application_key = f"job-dashboard-applicant-{selected_job['id']}"
-query_signature = (selected_filter, search)
+query_signature = (filter_options[selected_filter], search)
 if st.session_state.get(query_state_key) != query_signature:
     st.session_state[query_state_key] = query_signature
     st.session_state[page_state_key] = 0
@@ -116,7 +135,7 @@ page_index = max(st.session_state.get(page_state_key, 0), 0)
 page_result = safe_api(
     lambda: load_job_dashboard_page(
         str(selected_job["id"]),
-        selected_filter.casefold(),
+        filter_options[selected_filter],
         search,
         page_index * APPLICANTS_PER_PAGE,
         st.session_state.get(selected_application_key),
@@ -148,7 +167,20 @@ app_rows = [
     for item in applicants
 ]
 
-st.dataframe(app_rows, hide_index=True, use_container_width=True)
+table_event = st.dataframe(
+    app_rows,
+    hide_index=True,
+    use_container_width=True,
+    on_select="rerun",
+    selection_mode="single-row",
+    key=f"job-dashboard-applicants-{selected_job['id']}-{page_index}-{selected_filter}-{search}",
+)
+selected_rows = table_event.selection.rows
+if selected_rows:
+    clicked_application_id = applicants[selected_rows[0]]["id"]
+    if clicked_application_id != st.session_state.get(selected_application_key):
+        st.session_state[selected_application_key] = clicked_application_id
+        st.rerun()
 
 previous_col, page_info_col, next_col = st.columns([1, 2, 1])
 with previous_col:
@@ -179,15 +211,6 @@ with next_col:
         st.session_state.pop(selected_application_key, None)
         st.rerun()
 
-selected_application_id = st.selectbox(
-    "Open applicant details",
-    options=[item["id"] for item in applicants],
-    format_func=lambda item_id: next(
-        (item.get("candidate_name") or "Unknown applicant" for item in applicants if item["id"] == item_id),
-        "Unknown applicant",
-    ),
-    key=selected_application_key,
-)
 selected_application = page_result.get("selected_application")
 
 if selected_application:

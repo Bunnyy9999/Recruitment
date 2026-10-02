@@ -140,6 +140,12 @@ class JobDashboardFilter(str, Enum):
     passed = "pass"
     failed = "fail"
     pending = "pending"
+    active_pipeline = "active_pipeline"
+    ceo_review = "ceo_review"
+    hired = "hired"
+    failed_at_ceo = "failed_at_ceo"
+    first_interview_scheduled = "first_interview_scheduled"
+    second_interview = "second_interview"
 
 
 class JobDashboardApplicant(BaseModel):

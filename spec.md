@@ -126,7 +126,7 @@ Google Forms settings read `GOOGLE_SERVICE_ACCOUNT_FILE` from the environment; r
    - A round's sequence number is unique within its application, preventing one recording from overwriting another round's file. The database stores `scheduled_at`, `sequence_order`, `local_audio_path`, status, and human feedback.
    - HR may remove any scheduled or completed round from the application. Deletion removes the database row, deletes the associated local recording if present, and reindexes the remaining rounds so `sequence_order` remains contiguous.
 4. **Recording Verification**: The UI shows whether the recording exists at its expected local path. Audio contents are not transcribed, chunked, converted, or analyzed by AI.
-5. **Jobs Dashboard Overview**: The application includes a portfolio dashboard that lists all jobs as cards with status and lets HR select a job to review the full applicant list. Each job view supports result filters for pass, fail, pending, and search by name/email/application ID.
+5. **Jobs Dashboard Overview**: The application includes a portfolio dashboard that lists all jobs as cards with status and lets HR select a job to review applicants. Applicant rows are filtered and searched server-side and paginated (20 rows per page in the UI); the pending filter matches applications with no screening decision or a pending final decision. Full application data, including original form responses, is loaded only for the selected applicant.
 
 ### Phase 4: Final Executive Determination
 1. **Closing Review Hand-off**: Once all technical interview records are marked `complete`, HR moves the candidate to the `ceo_review` tracking phase using the button on the Interviews page. Executive Review is for the CEO's dossier review and final decision.
@@ -143,6 +143,7 @@ All paths are relative to `BACKEND_API_URL` (never hardcoded). JSON unless noted
 |---|---|---|---|
 | GET | `/health` | any | Liveness |
 | GET | `/api/v1/jobs` | hr, staff | List jobs |
+| GET | `/api/v1/dashboard/summary` | hr, staff | Command-center jobs and application/pipeline counts |
 | POST | `/api/v1/jobs` | hr | Create job from hiring criteria |
 | POST | `/api/v1/jobs/{job_id}/generate-jd` | hr | Gemini Flash API JD draft into `jd_markdown` |
 | PATCH | `/api/v1/jobs/{job_id}` | hr | Save JD edits, status, compensation |
@@ -150,6 +151,10 @@ All paths are relative to `BACKEND_API_URL` (never hardcoded). JSON unless noted
 | POST | `/api/v1/jobs/{job_id}/linkedin-blurb` | hr | Generate reviewed marketing/job post containing the persisted form responder URL |
 | POST | `/api/v1/jobs/{job_id}/sync` | hr | Ingest form answers + AI pass/fail |
 | GET | `/api/v1/jobs/{job_id}/applications` | hr, staff | Applications for one job (optional `pipeline_status` filter) |
+| GET | `/api/v1/jobs/{job_id}/applicants` | hr, staff | Sync page, server-filtered and paginated; supports `agent_decision`, `has_other_applications`, `search`, `offset`, and `limit` (maximum 100). Each returned page row retains its original `form_responses`. |
+| GET | `/api/v1/jobs/{job_id}/dashboard-applicants` | hr, staff | Jobs Dashboard page; supports `decision_filter` (`all`, `pass`, `fail`, `pending`), `search`, `offset`, `limit`, and optional `selected_application_id`. Returns compact applicant rows and the selected application's full data, including form responses. |
+| GET | `/api/v1/jobs/{job_id}/interview-workspace` | hr, staff | Compact active-applicant choices and interview rounds for optional `application_id` |
+| GET | `/api/v1/jobs/{job_id}/executive-workspace` | staff (CEO), hr | Eligible applicant choices and the full dossier for optional `application_id` |
 | GET | `/api/v1/candidates/{candidate_id}/history` | hr, staff | Sibling applications with screening summaries and human remarks |
 | POST | `/api/v1/applications/{application_id}/hr-override` | hr | Fail pool → `active_pipeline`, `final_decision=pending` |
 | POST | `/api/v1/applications/{application_id}/move-to-ceo` | hr | Interviews page hand-off after at least one round exists and all rounds are complete → `ceo_review` |
@@ -161,4 +166,6 @@ All paths are relative to `BACKEND_API_URL` (never hardcoded). JSON unless noted
 | POST | `/api/v1/interviews/{interview_id}/recording` | hr | Multipart upload for that round → sequence-numbered local recording path |
 | PATCH | `/api/v1/interviews/{interview_id}` | hr, staff | Feedback / mark complete |
 
-The sync endpoint takes no applicant payload and returns a `FormSyncResult` with per-response `synced`, `duplicate`, or `error` outcomes. The application list includes candidate name, email, phone, screening summary, and original `form_responses` for the HR result table and selected-applicant detail view. The template's `Contact Number` answer is mapped to the candidate phone field. Candidate history includes both `screening_summary` and `remarks`; the latter is human-authored and is written through the CEO final-decision action, while interview feedback remains attached to interview rounds. The sync results table reports the latest run, while the applicant table reports persisted applications for the selected job. Generated JD and LinkedIn content is shown in its editor immediately after generation. Only response sync requires the `forms.responses.readonly` scope; OAuth users with older tokens are prompted to re-consent when they first run sync. Form cloning continues to use Drive and Forms body scopes.
+The sync endpoint takes no applicant payload and returns a `FormSyncResult` with per-response `synced`, `duplicate`, or `error` outcomes. The original application-list endpoint includes candidate name, email, phone, screening summary, and `form_responses`; the page-specific reads above keep page payloads small while retaining the data needed by the selected profile. The Sync page returns answers for its current page of applicants. Jobs Dashboard returns answers only for the selected application. The template's `Contact Number` answer is mapped to the candidate phone field. Candidate history includes both `screening_summary` and `remarks`; the latter is human-authored and is written through the CEO final-decision action, while interview feedback remains attached to interview rounds. The sync results table reports the latest run, while the applicant table reports persisted applications for the selected job. Generated JD and LinkedIn content is shown in its editor immediately after generation. Only response sync requires the `forms.responses.readonly` scope; OAuth users with older tokens are prompted to re-consent when they first run sync. Form cloning continues to use Drive and Forms body scopes.
+
+Page-specific read results are cached in Streamlit for short periods to avoid repeating identical API reads on widget reruns. Mutations clear the affected cache. The database read functions do not replace the REST API boundary; FastAPI calls the Supabase RPC functions for combined page reads.

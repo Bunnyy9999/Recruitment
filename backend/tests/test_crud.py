@@ -31,7 +31,7 @@ from backend.app.schemas.interviews_schema import (
     InterviewRoundUpdate,
     InterviewScheduleRequest,
 )
-from backend.app.schemas.jobs_schema import JobCreate, JobPatch, JobStatus
+from backend.app.schemas.jobs_schema import CommandCenterSummary, JobCreate, JobPatch, JobStatus
 from backend.app.services.supabase_service import (
     LazySupabaseClient,
     SupabaseConfigurationError,
@@ -234,9 +234,19 @@ class JobCrudTests(TestCase):
             data=[
                 {
                     "jobs": [job],
+                    "draft_job_count": 1,
+                    "posted_job_count": 3,
+                    "total_job_count": 6,
+                    "open_job_count": 3,
+                    "closed_job_count": 2,
                     "application_count": 12,
                     "active_pipeline_count": 5,
                     "ceo_decision_count": 2,
+                    "stage1_pass_count": 8,
+                    "first_interview_scheduled_count": 3,
+                    "second_interview_count": 1,
+                    "successful_applicant_count": 2,
+                    "ceo_failed_applicant_count": 1,
                 }
             ]
         )
@@ -246,9 +256,42 @@ class JobCrudTests(TestCase):
 
         client.rpc.assert_called_once_with("get_command_center_summary", {})
         self.assertEqual(summary.jobs[0].id, job["id"])
+        self.assertEqual(summary.draft_job_count, 1)
+        self.assertEqual(summary.posted_job_count, 3)
+        self.assertEqual(summary.total_job_count, 6)
+        self.assertEqual(summary.open_job_count, 3)
+        self.assertEqual(summary.closed_job_count, 2)
         self.assertEqual(summary.application_count, 12)
         self.assertEqual(summary.active_pipeline_count, 5)
         self.assertEqual(summary.ceo_decision_count, 2)
+        self.assertEqual(summary.stage1_pass_count, 8)
+        self.assertEqual(summary.first_interview_scheduled_count, 3)
+        self.assertEqual(summary.second_interview_count, 1)
+        self.assertEqual(summary.successful_applicant_count, 2)
+        self.assertEqual(summary.ceo_failed_applicant_count, 1)
+
+    def test_command_center_summary_derives_job_counts_from_legacy_rpc_payload(self) -> None:
+        job = job_row()
+        job["status"] = "draft"
+        summary = CommandCenterSummary.model_validate(
+            {
+                "jobs": [job],
+                "open_job_count": 0,
+                "closed_job_count": 0,
+                "application_count": 0,
+                "active_pipeline_count": 0,
+                "ceo_decision_count": 0,
+                "stage1_pass_count": 0,
+                "first_interview_scheduled_count": 0,
+                "second_interview_count": 0,
+                "successful_applicant_count": 0,
+                "ceo_failed_applicant_count": 0,
+            }
+        )
+
+        self.assertEqual(summary.draft_job_count, 1)
+        self.assertEqual(summary.posted_job_count, 0)
+        self.assertEqual(summary.total_job_count, 1)
 
     def test_create_job_returns_validated_model(self) -> None:
         row = job_row()
