@@ -10,6 +10,9 @@ def delete_interview_round(interview_id: str) -> bool:
     return True
 
 
+apply_styles()
+
+
 @st.cache_data(ttl=30, show_spinner=False)
 def load_jobs():
     return get_json("/api/v1/jobs") or []
@@ -25,10 +28,12 @@ def load_interview_workspace(job_id: str, application_id: str | None):
 
 
 apply_styles()
-st.markdown('<div class="eyebrow">Phase 3 · technical interviews</div>', unsafe_allow_html=True)
-st.title("Interviews")
+st.markdown('<div class="eyebrow">Pipeline · interview workspace</div>', unsafe_allow_html=True)
+st.title("Interview Workspace")
+st.caption("Schedule the next conversation, capture interviewer feedback, and keep every round attached to the applicant record.")
 try:
-    jobs = load_jobs()
+    routed_job = st.session_state.pop("interview-job-data", None)
+    jobs = [routed_job] if isinstance(routed_job, dict) and routed_job.get("id") else load_jobs()
 except Exception as error:
     jobs = []
     st.error(str(error))
@@ -36,7 +41,14 @@ options = job_options(jobs)
 if not options:
     st.info("Create a requisition first.")
     st.stop()
-job = options[st.selectbox("Requisition", list(options))]
+job_labels = list(options)
+requested_job = st.session_state.pop("interview-job", None)
+job_picker_key = "interview-job-picker"
+if requested_job in options:
+    st.session_state[job_picker_key] = requested_job
+if st.session_state.get(job_picker_key) not in options:
+    st.session_state[job_picker_key] = job_labels[0]
+job = options[st.selectbox("Requisition", job_labels, key=job_picker_key)]
 applicant_key = f"interview-applicant-{job['id']}"
 selected_applicant_id = st.session_state.get(applicant_key)
 workspace = safe_api(
@@ -63,11 +75,24 @@ app = st.selectbox(
 )
 app = applicants_by_id[app]
 rounds = workspace.get("rounds", [])
+route_info = st.session_state.get("interview-applicant-info") or {}
+application_info = route_info if route_info.get("id") == app["id"] else app
+st.markdown(
+    f'<div class="workspace-panel"><div class="eyebrow">Selected applicant</div>'
+    f'<h3>{app.get("candidate_name") or "Unknown applicant"}</h3>'
+    f'<div class="record-meta">{app.get("email") or "No email recorded"} · {application_info.get("phone") or "No phone recorded"} · {status_badge(app.get("pipeline_status"))}</div>'
+    f'<div class="record-meta">Screening: {application_info.get("screening_summary") or "No screening summary recorded."}</div></div>',
+    unsafe_allow_html=True,
+)
+st.markdown("<div class='action-strip'>Use the controls below to schedule the next round or complete the CEO hand-off when every recorded round is complete.</div>", unsafe_allow_html=True)
 left, right = st.columns([1.35, 1])
 with left:
+    st.markdown('<div class="workspace-panel">', unsafe_allow_html=True)
     st.subheader("Interview rounds")
+    if not rounds:
+        st.info("No interview rounds yet. Schedule the first round from the panel on the right.")
     for round_ in rounds:
-        st.markdown(f'<div class="record"><div class="record-title">Technical interview {round_["sequence_order"]} {status_badge(round_["status"])}</div><div class="record-meta">Scheduled: {round_.get("scheduled_at") or "—"} · Date: {round_.get("interview_date") or "—"}</div><div class="record-meta">{round_.get("feedback") or "No interviewer notes yet."}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="round-card {round_["status"]}"><div class="round-title">Round {round_["sequence_order"]} · Technical interview {status_badge(round_["status"])}</div><div class="round-meta">Scheduled: {round_.get("scheduled_at") or "—"} · Date: {round_.get("interview_date") or "—"}</div><div class="round-meta">{round_.get("feedback") or "No interviewer notes yet."}</div></div>', unsafe_allow_html=True)
         with st.expander(f"Manage round {round_['sequence_order']}"):
             with st.form(f"manage-round-{round_['id']}"):
                 feedback = st.text_area("Feedback", value=round_.get("feedback") or "", key=f"feedback-{round_['id']}")
@@ -108,6 +133,7 @@ with left:
                 if result:
                     load_interview_workspace.clear()
                     st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
     if (
         rounds
         and all(round_["status"] == "complete" for round_ in rounds)
@@ -127,7 +153,9 @@ with left:
             load_interview_workspace.clear()
             st.rerun()
 with right:
+    st.markdown('<div class="workspace-panel">', unsafe_allow_html=True)
     st.subheader("Schedule next round")
+    st.caption(f"This will create Technical Interview {len(rounds) + 1} for the selected applicant.")
     with st.form("schedule-round"):
         schedule_date = st.date_input("Date", value=date.today())
         schedule_time = st.time_input("Time", value=time(10, 0))
@@ -138,3 +166,4 @@ with right:
         if result:
             load_interview_workspace.clear()
             st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)

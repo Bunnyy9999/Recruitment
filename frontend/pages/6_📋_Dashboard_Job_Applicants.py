@@ -1,12 +1,12 @@
 import streamlit as st
 
-from ui import apply_styles, fmt_status, get_json, safe_api, status_badge
+from ui import apply_styles, fmt_status, get_json, post_json, safe_api
 
 
 APPLICANTS_PER_PAGE = 20
 FILTERS = {
     "All applicants": "all",
-    "Sync pass": "pass",
+    "Passed Stage 1": "stage_one",
     "Sync fail": "fail",
     "Active pipeline": "active_pipeline",
     "CEO review": "ceo_review",
@@ -22,14 +22,12 @@ def load_applicant_page(
     decision_filter: str,
     search: str,
     offset: int,
-    selected_application_id: str | None,
 ) -> dict:
     params = {
         "decision_filter": decision_filter,
         "search": search or None,
         "offset": offset,
         "limit": APPLICANTS_PER_PAGE,
-        "selected_application_id": selected_application_id,
     }
     return get_json(
         f"/api/v1/jobs/{job_id}/dashboard-applicants",
@@ -39,7 +37,8 @@ def load_applicant_page(
 
 apply_styles()
 st.markdown('<div class="eyebrow">Dashboard · job applicants</div>', unsafe_allow_html=True)
-st.link_button("Back to job selection", url="/dashboard-details", icon="📋")
+if st.button("Back to job selection", icon="📋"):
+    st.switch_page("pages/5_🔎_Dashboard_Drilldown.py")
 
 job_id = st.session_state.get("selected_job_id")
 if not job_id:
@@ -76,6 +75,8 @@ with st.expander("Job details", expanded=False):
 
 filter_key = f"dashboard-job-applicant-filter-{job_id}"
 requested_filter = st.session_state.pop("dashboard_applicant_filter", None)
+if requested_filter is None:
+    requested_filter = st.session_state.pop("candidate_detail_return_filter", None)
 if requested_filter in FILTERS.values():
     st.session_state[filter_key] = next(label for label, value in FILTERS.items() if value == requested_filter)
 selected_filter = st.selectbox(
@@ -101,7 +102,6 @@ page_result = safe_api(
         FILTERS[selected_filter],
         search.strip(),
         page_index * APPLICANTS_PER_PAGE,
-        st.session_state.get(selected_key),
     )
 ) or {}
 applicants = page_result.get("applicants", [])
@@ -138,10 +138,83 @@ table_event = st.dataframe(
 )
 selected_rows = table_event.selection.rows
 if selected_rows:
-    clicked_application_id = applicants[selected_rows[0]]["id"]
-    if clicked_application_id != st.session_state.get(selected_key):
-        st.session_state[selected_key] = clicked_application_id
+    selected_application = applicants[selected_rows[0]]
+    if selected_application["id"] != st.session_state.get(selected_key):
+        st.session_state[selected_key] = selected_application["id"]
         st.rerun()
+
+selected_application = next(
+    (item for item in applicants if item["id"] == st.session_state.get(selected_key)),
+    None,
+)
+if selected_application:
+    st.divider()
+    action_filter = FILTERS[selected_filter]
+    info_tab, action_tab = st.tabs(["Applicant info", "Next action"])
+    with info_tab:
+        st.markdown('<div class="eyebrow">Selected applicant</div>', unsafe_allow_html=True)
+        st.subheader(selected_application.get("candidate_name") or "Applicant")
+        info_col, stage_col, decision_col = st.columns(3)
+        with info_col:
+            st.caption("Email")
+            st.write(selected_application.get("email") or "Not recorded")
+            st.caption("Phone")
+            st.write(selected_application.get("phone") or "Not recorded")
+        with stage_col:
+            st.caption("Pipeline")
+            st.write(fmt_status(selected_application.get("pipeline_status")))
+            st.caption("Screening")
+            st.write(fmt_status(selected_application.get("agent_decision")))
+        with decision_col:
+            st.caption("Final decision")
+            st.write(fmt_status(selected_application.get("final_decision")))
+            st.caption("Application")
+            st.write(f"{selected_application['id'][:8]}…")
+        st.markdown("**Screening summary**")
+        st.write(selected_application.get("screening_summary") or "No screening summary recorded.")
+    with action_tab:
+        action_col, profile_col = st.columns([2.2, 1], gap="medium")
+        with action_col:
+            if action_filter == "stage_one":
+                if st.button("Schedule interview", type="primary", icon="📅", use_container_width=True):
+                    st.session_state[f"interview-applicant-{job_id}"] = selected_application["id"]
+                    st.session_state["interview-applicant-info"] = selected_application
+                    st.session_state["interview-job"] = f"{job['title']} · {job['status'].title()}"
+                    st.session_state["interview-job-data"] = job
+                    st.switch_page("pages/3_Interviews.py")
+            elif action_filter in {"first_interview_scheduled", "second_interview"}:
+                schedule_col, ceo_col = st.columns(2)
+                with schedule_col:
+                    if st.button("Schedule next interview", type="primary", icon="📅", use_container_width=True):
+                        st.session_state[f"interview-applicant-{job_id}"] = selected_application["id"]
+                        st.session_state["interview-applicant-info"] = selected_application
+                        st.session_state["interview-job"] = f"{job['title']} · {job['status'].title()}"
+                        st.session_state["interview-job-data"] = job
+                        st.switch_page("pages/3_Interviews.py")
+                with ceo_col:
+                    if st.button("Move to CEO review", icon="➡️", use_container_width=True):
+                        result = safe_api(
+                            lambda: post_json(
+                                f"/api/v1/applications/{selected_application['id']}/move-to-ceo"
+                            ),
+                            success="Applicant moved to CEO review",
+                        )
+                        if result:
+                            st.session_state.pop(selected_key, None)
+                            st.rerun()
+            elif action_filter == "ceo_review":
+                if st.button("Open CEO review", type="primary", icon="💼", use_container_width=True):
+                    st.session_state[f"executive-applicant-{job_id}"] = selected_application["id"]
+                    st.session_state["executive-job"] = f"{job['title']} · {job['status'].title()}"
+                    st.session_state["executive-job-data"] = job
+                    st.switch_page("pages/4_ceo_review.py")
+            else:
+                st.caption("Select a pipeline stage to see its next action.")
+        with profile_col:
+            st.session_state["candidate_detail_return_filter"] = action_filter
+            st.session_state["candidate_detail_application"] = selected_application
+            if st.button("View applicant profile", icon="👤", use_container_width=True):
+                st.switch_page("pages/7_👤_Candidate_Detail.py")
 
 previous_col, page_info_col, next_col = st.columns([1, 2, 1])
 with previous_col:
@@ -157,22 +230,3 @@ with next_col:
         st.session_state.pop(selected_key, None)
         st.rerun()
 
-selected_id = st.session_state.get(selected_key)
-selected_summary = next((item for item in applicants if item["id"] == selected_id), None)
-selected_details = page_result.get("selected_application") if selected_summary else None
-if selected_summary and selected_details:
-    st.divider()
-    st.subheader(selected_summary.get("candidate_name") or "Applicant details")
-    st.caption(selected_summary.get("email") or "")
-    st.markdown(f"**Screening:** {fmt_status(selected_summary.get('agent_decision'))}")
-    st.markdown(f"**Pipeline:** {status_badge(selected_summary.get('pipeline_status'))}", unsafe_allow_html=True)
-    st.markdown(f"**Final decision:** {fmt_status(selected_summary.get('final_decision'))}")
-    st.write(selected_summary.get("screening_summary") or "No screening summary recorded.")
-    if selected_details.get("remarks"):
-        st.markdown("**Remarks**")
-        st.write(selected_details["remarks"])
-    if selected_details.get("form_responses"):
-        st.markdown("**Application responses**")
-        for question, answer in selected_details["form_responses"].items():
-            with st.expander(question):
-                st.write(answer)

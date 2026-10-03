@@ -36,6 +36,8 @@ One row per vacancy.
 | `google_form_id`, `google_form_url` | Linked application form |
 | `linkedin_blurb` | Job-post text |
 | `status` | Draft, posted, or closed |
+| `posted_at` | Timestamp when the job first became posted |
+| `closed_at` | Timestamp when the job became closed |
 | `created_at` | Creation timestamp |
 
 ### `candidates`
@@ -102,13 +104,13 @@ These `SECURITY INVOKER` functions are called by the backend through Supabase RP
 
 | Function | Migration | Purpose |
 | --- | --- | --- |
-| `get_command_center_summary()` | `20261002000000_command_center_summary.sql` | Returns jobs and total, active-pipeline, and CEO-decision counts. |
+| `get_command_center_summary()` | `20261002000000_command_center_summary.sql`, `20261002000008_add_job_application_counts.sql`, `20261002000009_dashboard_job_filter_counts.sql` | Returns global dashboard counts and per-job counts for total applicants, Stage 1 pass, first interview, second interview, CEO review, hired, and CEO-failed cards. |
 | `list_job_applicants_page(...)` | `20261002000001_paginated_job_applicants.sql` | Filters and paginates Sync applicants, including original answers for the returned page. |
 | `get_interview_workspace(...)` | `20261002000002_interview_workspace.sql` | Returns compact active-applicant choices and rounds for the selected active application. |
 | `get_executive_workspace(...)` | `20261002000003_executive_workspace.sql` | Returns compact eligible-applicant choices and the selected application's full dossier. |
 | `get_job_dashboard_page(...)` | `20261002000004_jobs_dashboard_page.sql` | Returns compact filtered applicant rows and full data, including answers, only for the selected application. Its `pending` filter includes a missing agent decision or `final_decision = pending`. |
 
-The page-specific functions are granted to `service_role`; public, `anon`, and `authenticated` execution is revoked. Apply unapplied migrations from the repository root with `supabase db push` (or inspect first with `npx --yes supabase@latest db push --dry-run`).
+The page-specific functions are granted to `service_role`; public, `anon`, and `authenticated` execution is revoked. Migration `20261002000009_dashboard_job_filter_counts.sql` also adds lifecycle timestamps and records them when a job transitions to `posted` or `closed`. Apply unapplied migrations from the repository root with `npx.cmd --yes supabase@latest db push` (or inspect first with `npx.cmd --yes supabase@latest db push --dry-run`).
 
 ## Google Forms Sync Workflow
 
@@ -120,7 +122,7 @@ The page-specific functions are granted to `service_role`; public, `anon`, and `
 6. The backend downloads uploaded PDF résumés from Google Drive and extracts text for screening. It does not save a local résumé copy. Candidate name and email are anonymized in the text sent to the AI screener.
 7. If screening succeeds, the backend creates a candidate profile if needed, then creates an application containing the response ID, original answers, AI decision, and screening summary.
 8. A screening pass sets `pipeline_status = active_pipeline` and `final_decision = pending`. A screening fail sets `pipeline_status = failed_at_sync` and `final_decision = fail`.
-9. The sync result reports responses as synced, duplicates, or errors. A later sync can retry responses that did not result in a saved application.
+9. Every question title is retained in the saved `form_responses` object. An unanswered question is stored with an empty value and shown in the candidate profile as `Answer not provided`. The sync result reports responses as synced, duplicates, or errors. A later sync can retry responses that did not result in a saved application.
 
 ## Where the sync gets its data
 
@@ -130,4 +132,8 @@ The backend needs Google credentials configured through `GOOGLE_OAUTH_CLIENT_FIL
 
 ## Implementation note
 
-The code declares the `forms.responses.readonly` scope, but the response-fetch method currently initializes Google services using the default scopes, which omit that read scope. Sync may require passing the response-read scope when building the Google service.
+The response-fetch method requests the `forms.responses.readonly` scope when building Google services. OAuth tokens without that scope trigger re-consent before response sync.
+
+## Demo seed data
+
+`supabase/seed.sql` is repeatable demo data. It uses fixed UUIDs and `ON CONFLICT (id) DO UPDATE`, and covers every dashboard applicant card, including first and second interviews, CEO review, hired, and CEO-failed records. `db push` applies migrations but does not run the seed file. Without Docker, apply the migration with `npx.cmd --yes supabase@latest db push`, then run `supabase/seed.sql` in the Supabase SQL Editor.

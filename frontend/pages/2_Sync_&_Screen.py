@@ -82,6 +82,10 @@ with sync_col:
                 item for item in result.get("items", [])
                 if item.get("status") == "synced"
             ]
+            failed_applications = [
+                item for item in result.get("items", [])
+                if item.get("status") == "error"
+            ]
             if new_applications:
                 st.dataframe(
                     [
@@ -96,7 +100,22 @@ with sync_col:
                     hide_index=True,
                     use_container_width=True,
                 )
-            else:
+            if failed_applications:
+                st.error("Some responses could not be imported:")
+                st.dataframe(
+                    [
+                        {
+                            "Applicant": item.get("candidate_name") or "Unknown applicant",
+                            "Email": item.get("email") or "",
+                            "Response ID": item.get("response_id") or "",
+                            "Error": item.get("detail") or "Unknown sync error",
+                        }
+                        for item in failed_applications
+                    ],
+                    hide_index=True,
+                    use_container_width=True,
+                )
+            if not new_applications and not failed_applications:
                 st.info("No new applications were added in this sync.")
 
 with filter_col:

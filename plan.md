@@ -110,6 +110,8 @@ This plan follows the modular architecture in `project_structure.text` and the l
 
 ### Phase 5.5: Executive Decision UI
 - [X] Show screening outcomes, verified recording references, and human feedback; provide the CEO final-decision action.
+- [X] Limit applicant dashboard drilldowns to jobs with applicants and show each job's applicant count.
+- [X] Keep dashboard detail back controls in the current browser tab.
 
 ---
 

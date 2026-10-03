@@ -8,7 +8,12 @@ backend\.venv\Scripts\python.exe -m unittest discover -s .\backend\tests -v
 
 # supabase commands 
 
-npx --yes supabase@latest --version
-npx --yes supabase@latest migration list
-npx --yes supabase@latest db push --dry-run
-supabase db push
+npx.cmd --yes supabase@latest --version
+npx.cmd --yes supabase@latest login --token YOUR_SUPABASE_ACCESS_TOKEN --output-format text
+npx.cmd --yes supabase@latest link --project-ref YOUR_PROJECT_REF
+npx.cmd --yes supabase@latest migration list
+npx.cmd --yes supabase@latest db push --dry-run
+npx.cmd --yes supabase@latest db push
+
+# Without Docker, run supabase/seed.sql in the linked project's SQL Editor
+# after db push. db reset is local-only and requires Docker or Podman.

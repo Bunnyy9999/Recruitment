@@ -53,6 +53,15 @@ class JobRead(BaseModel):
 
     id: UUID
     title: str
+    posted_at: AwareDatetime | None = None
+    closed_at: AwareDatetime | None = None
+    application_count: int = Field(default=0, ge=0)
+    stage1_pass_count: int = Field(default=0, ge=0)
+    first_interview_scheduled_count: int = Field(default=0, ge=0)
+    second_interview_count: int = Field(default=0, ge=0)
+    ceo_decision_count: int = Field(default=0, ge=0)
+    successful_applicant_count: int = Field(default=0, ge=0)
+    ceo_failed_applicant_count: int = Field(default=0, ge=0)
     tech_stack: str
     seniority: str
     required_experience: str

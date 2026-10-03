@@ -22,6 +22,10 @@ from backend.app.services.google_forms import (
     GoogleFormsService,
 )
 from backend.app.utils.anonymizer import anonymize_applicant_text
+from pydantic import HttpUrl, TypeAdapter, ValidationError
+
+
+HTTP_URL_ADAPTER = TypeAdapter(HttpUrl)
 
 
 def sync_form_responses(
@@ -85,6 +89,7 @@ def _sync_submission(
         submission.answers, ("phone", "mobile", "contact number")
     )
     linkedin_url = _answer_by_keyword(submission.answers, ("linkedin",))
+    phone, linkedin_url = _normalize_identity_values(phone, linkedin_url)
     identity: CandidateIdentityLookup | None = None
     if email or phone or linkedin_url:
         try:
@@ -216,6 +221,26 @@ def _answer_by_keyword(answers: dict[str, str], keywords: tuple[str, ...]) -> st
         if any(keyword in normalized for keyword in keywords):
             return answer.strip() or None
     return None
+
+
+def _normalize_identity_values(
+    phone: str | None,
+    linkedin_url: str | None,
+) -> tuple[str | None, str | None]:
+    normalized_phone = phone.strip() if phone else None
+    if normalized_phone and len(normalized_phone) > 32:
+        normalized_phone = None
+
+    normalized_linkedin = linkedin_url.strip() if linkedin_url else None
+    if normalized_linkedin:
+        try:
+            normalized_linkedin = str(
+                HTTP_URL_ADAPTER.validate_python(normalized_linkedin)
+            ).rstrip("/")
+        except ValidationError:
+            normalized_linkedin = None
+
+    return normalized_phone, normalized_linkedin
 
 
 def _sync_error(submission: GoogleFormSubmission, detail: str) -> FormSyncItem:

@@ -4,7 +4,6 @@ import streamlit as st
 
 from ui import get_json, setup_page
 
-
 setup_page("Dashboard")
 
 
@@ -53,15 +52,17 @@ def command_center() -> None:
                         st.switch_page("pages/5_🔎_Dashboard_Drilldown.py")
 
 
+dashboard_page = st.Page(command_center, title="Dashboard", url_path="dashboard")
 pages = {
-    "Dashboard": st.Page(command_center, title="Dashboard", icon="📊", url_path="dashboard"),
-    "Jobs Dashboard": st.Page("pages/0_🏢_Jobs_Dashboard.py", title="Jobs Dashboard", icon="🏢"),
-    "Hiring Request": st.Page("pages/1_🎯_Hiring_Request.py", title="Hiring Request", icon="🎯"),
-    "Sync & Screen": st.Page("pages/2_🔄_Sync_&_Screen.py", title="Sync & Screen", icon="🔄"),
-    "Interviews": st.Page("pages/3_🎙️_Interviews.py", title="Interviews", icon="🎙️"),
-    "Executive Review": st.Page("pages/4_💼_Executive.py", title="Executive Review", icon="💼"),
+    "Dashboard": dashboard_page,
+    "Hiring": st.Page("pages/1_Hiring_Request.py", title="Hiring"),
+    "Synchronize Applicants": st.Page("pages/2_Sync_&_Screen.py", title="Synchronize Applicants"),
+    "Interview Workspace": st.Page("pages/3_Interviews.py", title="Interview Workspace"),
+    "CEO Review": st.Page("pages/4_ceo_review.py", title="CEO Review"),
     "Dashboard Details": st.Page("pages/5_🔎_Dashboard_Drilldown.py", title="Dashboard Details", url_path="dashboard-details", visibility="hidden"),
     "Job Applicant Details": st.Page("pages/6_📋_Dashboard_Job_Applicants.py", title="Job Applicant Details", url_path="dashboard-job-applicants", visibility="hidden"),
+    "Candidate Detail": st.Page("pages/7_👤_Candidate_Detail.py", title="Candidate Detail", url_path="candidate-detail", visibility="hidden"),
 }
 
+st.session_state["_dashboard_page"] = dashboard_page
 st.navigation(list(pages.values())).run()

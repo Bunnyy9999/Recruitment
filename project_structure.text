@@ -5,7 +5,7 @@ dataropes-recruitment-tool/
 ├── CLAUDE.md                     # Central system context and core engine instructions
 ├── spec.md                       # Comprehensive product and functional workflow spec
 ├── Done.md                       # Plain-language summary of completed work, behavior, and verification
-├── docker-compose.yml            # Orchestrates local Streamlit, FastAPI, and Worker containers
+├── docker-compose.yml            # Optional container orchestration; local venvs do not require Docker
 ├── project_structure.text         # This architecture layout file
 │
 ├── frontend/                     # Streamlit App UI
@@ -14,10 +14,14 @@ dataropes-recruitment-tool/
 │   ├── main.py                   # Streamlit entrypoint (Multi-page configuration)
 │   ├── ui.py                     # Shared API client, styling, and UI helpers
 │   └── pages/
+│       ├── 0_🏢_Jobs_Dashboard.py # Portfolio jobs dashboard with server-side applicant filters
 │       ├── 1_🎯_Hiring_Request.py # Phase 1: JD generation & Google Form setup
 │       ├── 2_🔄_Sync_&_Screen.py  # Phase 2: Form Syncing, Resume/Form Match, Override Dashboard
 │       ├── 3_🎙️_Interviews.py     # Phase 3: Local media upload and verification tracking
 │       ├── 4_💼_Executive.py      # Phase 4: Compensation & CEO final decision gate
+│       ├── 5_🔎_Dashboard_Drilldown.py # Card-specific job drilldown and applicant counts
+│       ├── 6_📋_Dashboard_Job_Applicants.py # Filtered, paginated applicants for one job
+│       └── 7_👤_Candidate_Detail.py # Full selected application dossier and form answers
 │
 ├── backend/                      # FastAPI Business Logic Engine
 │   ├── Dockerfile
@@ -44,6 +48,8 @@ dataropes-recruitment-tool/
 │       │   └── v1/
 │       │       ├── jobs.py       # Job postings & Google Form generation endpoints
 │       │       ├── candidates.py # Sync, history check, and HR override actions
+│       │       ├── applications.py # Dossiers, CEO decisions, and HR pipeline transitions
+│       │       ├── dashboard.py  # Command-center summary endpoint
 │       │       └── interviews.py # Schedule numbered rounds, upload/verify recordings, and save human feedback
 │       │
 │       ├── database/             # Database access layer
@@ -79,7 +85,20 @@ dataropes-recruitment-tool/
 │       │   └── file_handler.py   # Safe configured recording paths, exclusive writes, and file verification
 │
 │
-└── supabase/                     # Local Schema Migrations Tracking
+└── supabase/                     # Supabase schema, migrations, and demo data
+    ├── config.toml               # Supabase CLI project and seed configuration
+    ├── seed.sql                  # Repeatable fictional demo data for all dashboard cards
     └── migrations/
         ├── 20260928000000_init_recruitment_schema.sql  # Database initialization script
-        └── 20260930000000_add_form_submission_data.sql # Form answers and response idempotency
+        ├── 20260930000000_add_form_submission_data.sql # Form answers and response idempotency
+        ├── 20261001000000_update_job_criteria.sql      # Text criteria and duplicate identity trigger
+        ├── 20261002000000_command_center_summary.sql   # Command-center summary RPC
+        ├── 20261002000001_paginated_job_applicants.sql # Sync applicant pagination RPC
+        ├── 20261002000002_interview_workspace.sql      # Interview workspace RPC
+        ├── 20261002000003_executive_workspace.sql      # Executive workspace RPC
+        ├── 20261002000004_jobs_dashboard_page.sql      # Filtered job dashboard RPC
+        ├── 20261002000005_dashboard_metrics.sql         # Dashboard metrics
+        ├── 20261002000006_dashboard_applicant_filters.sql # Applicant filter metrics
+        ├── 20261002000007_job_status_summary_counts.sql # Job status counts
+        ├── 20261002000008_add_job_application_counts.sql # Per-job total applicant counts
+        └── 20261002000009_dashboard_job_filter_counts.sql # Card counts and lifecycle timestamps

@@ -6,6 +6,11 @@ Stages 1–3 and Stage 4 are complete: the database migration was applied to Sup
 
 ### New additions
 - A jobs dashboard page now lists every hiring requisition as a status card and lets HR drill into applicant details for the selected job.
+- Applicant dashboard drilldowns now list only jobs with applicants matching the selected card and show the relevant per-job applicant count.
+- Dashboard detail back controls use same-tab Streamlit navigation instead of opening URL links in a new tab.
+- Dashboard applicant cards now filter jobs by their own matching count: total, Stage 1, first interview, second interview, CEO review, hired, and CEO-failed.
+- Job selectors show lifecycle dates and applicant counts. `created_at`, `posted_at`, and `closed_at` are tracked separately.
+- Selecting an applicant opens a dedicated Candidate Detail page. Full application data is loaded through the dossier endpoint, form questions are expandable, unanswered questions show `Answer not provided`, and browser/in-app back navigation preserves the active filter.
 - Applicant views support filters for pass, fail, pending, and free-text search by name, email, or application ID.
 - HR can remove any interview round from a candidate’s pipeline; the remaining rounds are automatically reindexed to keep sequence numbers contiguous.
 
@@ -87,7 +92,7 @@ Database and dashboard rows are validated by the existing Pydantic schemas. Supa
 
 `backend/app/services/local_media_service.py` connects an interview upload to the existing local save/verify utility. It stores bytes without decoding or inspecting audio and returns the verified path and interview ID/round metadata.
 
-Tests are in `backend/tests/`. The suite covers schema acceptance/rejection, candidate identity checks, schedule rules, path sanitization, traversal protection, no-overwrite behavior, empty-file cleanup, anonymization, prompt input/output contracts, provider behavior, structured response validation, CRUD behavior using a fake Supabase client, and Google/local-media services using fakes and temporary folders.
+Tests are in `backend/tests/`. The suite covers schema acceptance/rejection, candidate identity checks, schedule rules, path sanitization, traversal protection, no-overwrite behavior, empty-file cleanup, anonymization, prompt input/output contracts, provider behavior, structured response validation, CRUD behavior using a fake Supabase client, and Google/local-media services using fakes and temporary folders. Google Forms parsing also retains unanswered question titles. Migration `supabase/migrations/20261002000009_dashboard_job_filter_counts.sql` adds card-specific job counts and lifecycle timestamps.
 
 Run from the repository root using the backend virtual environment:
 
@@ -103,7 +108,7 @@ The frontend is also started from the backend venv environment when using this p
 
 The FastAPI app exposes `GET /health` and the implemented feature routes under `/api/v1`, including jobs, form sync, candidate history, interviews, and final decisions.
 
-Latest result: **92 tests passed**. CRUD behavior is tested with fake clients. The local app has also successfully generated Gemini content and synced a PDF submission from Google Forms. Starlette emits a deprecation warning about its current HTTPX test-client integration; tests pass, and this is limited to the test client transport.
+Latest result: **111 passed, 1 unrelated failure out of 112 tests**. The failure is the existing Windows path-normalization assertion in `backend/tests/test_utils.py`. CRUD behavior is tested with fake clients. The local app has also successfully generated Gemini content and synced a PDF submission from Google Forms. Starlette emits a deprecation warning about its current HTTPX test-client integration.
 
 ## Remaining Work
 
@@ -115,4 +120,4 @@ The HR sync action now retrieves all response pages from the job-specific Google
 
 The application table stores each Forms response ID with a per-job unique index, so repeat syncs skip previously imported responses. Global email/phone/LinkedIn matching and the `(candidate_id, job_id)` unique constraint continue to enforce cross-job identity and same-job non-redundancy. The applicant table shows name, email, phone, screening outcome, and summary; selecting a row shows the full original answers and prior applications. History displays AI screening summaries separately from human remarks; CEO final-decision remarks are human-authored. Generated JD and LinkedIn content is copied into its editor immediately after generation.
 
-Migration `supabase/migrations/20260930000000_add_form_submission_data.sql` was applied to the configured Supabase project. Only response sync requires `forms.responses.readonly`; OAuth users with older tokens are prompted to re-consent when they first sync, while form cloning continues with Drive and Forms body scopes. The full backend suite passes 92 tests, and the local app has successfully synced and screened a PDF submission.
+Migrations `supabase/migrations/20260930000000_add_form_submission_data.sql` through `supabase/migrations/20261002000009_dashboard_job_filter_counts.sql` support the current form-sync and dashboard workflows. The latest migration adds per-card per-job applicant counts, `posted_at`/`closed_at`, and lifecycle timestamp triggers. The repeatable `supabase/seed.sql` covers all dashboard cards with fictional records. Only response sync requires `forms.responses.readonly`; OAuth users with older tokens are prompted to re-consent when they first sync, while form cloning continues with Drive and Forms body scopes. The local app has successfully synced and screened a PDF submission.

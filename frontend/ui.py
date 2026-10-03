@@ -18,13 +18,16 @@ def apply_styles() -> None:
     html, body, [class*="css"] { font-family:'DM Sans',sans-serif; }
     .stApp { background:var(--paper); color:var(--ink); }
     [data-testid="stSidebar"] { background:#eef3ed; border-right:1px solid var(--line); }
-    [data-testid="stSidebar"] > div:first-child { padding:2rem 1.1rem; }
+    [data-testid="stSidebar"] > div:first-child { padding:1.4rem .9rem; }
+    [data-testid="stSidebar"] a { color:var(--ink) !important; text-decoration:none !important; border-radius:9px; font-weight:600; padding:.58rem .72rem; margin:.12rem 0; transition:background .18s ease,color .18s ease; }
+    [data-testid="stSidebar"] a:hover { color:var(--ink) !important; background:#dcefe2; }
+    [data-testid="stSidebar"] a[aria-current="page"] { color:var(--ink) !important; background:#dcefe2; box-shadow:inset 3px 0 0 var(--leaf); }
+    [data-testid="stSidebar"] .stButton > button { color:var(--ink); border-color:var(--line); background:white; }
     h1,h2,h3 { font-family:'Space Grotesk',sans-serif !important; color:var(--ink); letter-spacing:0 !important; }
     h1 { font-size:2.55rem !important; line-height:1.05 !important; }
     p,label,[data-testid="stCaptionContainer"] { color:var(--muted); }
-    .brand { padding:.25rem .35rem 2.2rem; }
-    .brand-mark { color:var(--coral); font-size:1.8rem; line-height:1; }
-    .brand-name { font:700 1.25rem 'Space Grotesk',sans-serif; color:var(--ink); margin-left:.35rem; }
+    .brand { padding:.25rem .35rem 1.35rem; }
+    .brand-name { font:700 1.25rem 'Space Grotesk',sans-serif; color:var(--ink); }
     .eyebrow { text-transform:uppercase; letter-spacing:.12em; font-size:.68rem; font-weight:700; color:var(--leaf); margin-bottom:.4rem; }
     .hero { background:var(--night); color:white; border-radius:18px; padding:2rem 2.2rem; margin:.4rem 0 1.5rem; position:relative; overflow:hidden; }
     .hero:after { content:''; position:absolute; width:220px; height:220px; right:-60px; top:-90px; border:35px solid #f4c95d; border-radius:50%; }
@@ -77,16 +80,36 @@ def apply_styles() -> None:
     .status-pill.pending { background:#fff1c7; color:#85651b; }
     .stButton > button { border-radius:9px; border:1px solid #c8d8ca; color:var(--leaf); font-weight:700; background:white; min-height:2.55rem; }
     .stButton > button[kind="primary"] { background:var(--leaf); color:white; border-color:var(--leaf); }
+    .stButton > button[kind="primary"] p, .stButton > button[kind="primary"] span { color:white !important; }
     .stButton > button:hover { border-color:var(--coral); color:var(--coral); }
     div[data-testid="stForm"] { background:white; border:1px solid var(--line); border-radius:14px; padding:1.1rem; }
     .stTextInput input,.stTextArea textarea,.stNumberInput input,.stDateInput input,.stTimeInput input { border-radius:8px; border-color:#d4dfd5; }
     .small-note { font-size:.78rem; color:var(--muted); }
+    .job-status-banner { border:1px solid; border-radius:10px; padding:.65rem .85rem; margin:.7rem 0 1rem; font-weight:700; }
+    .job-status-banner.draft { background:#fff4cc; border-color:#e4c45d; color:#765b12; }
+    .job-status-banner.posted { background:#e5f5e8; border-color:#83bf91; color:#236b3b; }
+    .job-status-banner.closed { background:#fde8e8; border-color:#df8d8d; color:#9a3f3f; }
+    .workspace-hero { background:var(--night); color:white; border-radius:16px; padding:1.5rem 1.7rem; margin:.45rem 0 1.25rem; }
+    .workspace-hero h1 { color:white !important; font-size:2.15rem !important; margin:.15rem 0 .45rem; }
+    .workspace-hero p { color:#b7c8bf; margin:0; }
+    .workspace-kicker { color:#f4c95d; text-transform:uppercase; letter-spacing:.12em; font-size:.68rem; font-weight:700; }
+    .workspace-panel { background:white; border:1px solid var(--line); border-radius:14px; padding:1rem 1.15rem; min-height:100%; }
+    .workspace-panel h3 { margin-top:0; }
+    .workspace-stat { background:#eef7f2; border-radius:10px; padding:.75rem .9rem; }
+    .workspace-stat-label { color:var(--muted); font-size:.72rem; }
+    .workspace-stat-value { color:var(--ink); font:700 1.3rem 'Space Grotesk',sans-serif; margin-top:.18rem; }
+    .round-card { background:#fbfcfa; border:1px solid var(--line); border-left:4px solid var(--leaf); border-radius:10px; padding:.85rem 1rem; margin-bottom:.7rem; }
+    .round-card.complete { border-left-color:#28794d; }
+    .round-card.pending { border-left-color:#c27c22; }
+    .round-title { color:var(--ink); font-weight:700; }
+    .round-meta { color:var(--muted); font-size:.78rem; margin-top:.2rem; }
+    .action-strip { background:#fff8e7; border:1px solid #ead38a; border-radius:12px; padding:.8rem 1rem; margin:1rem 0; }
     </style>
     """, unsafe_allow_html=True)
 
 
 def setup_page(title: str) -> None:
-    st.set_page_config(page_title=f"DataRopes | {title}", page_icon="◈", layout="wide", initial_sidebar_state="expanded")
+    st.set_page_config(page_title=f"DataRopes | {title}", layout="wide", initial_sidebar_state="expanded")
     apply_styles()
 
 
@@ -154,15 +177,14 @@ def status_badge(value: str | None) -> str:
 
 
 def render_sidebar() -> None:
-    st.sidebar.markdown('<div class="brand"><span class="brand-mark">◈</span><span class="brand-name">DataRopes</span></div>', unsafe_allow_html=True)
+    st.sidebar.markdown('<div class="brand"><span class="brand-name">DataRopes</span></div>', unsafe_allow_html=True)
     st.sidebar.caption("Recruitment workspace")
     st.sidebar.markdown("**Workspace**")
-    st.sidebar.page_link("main.py", label="Dashboard", icon="📊")
-    st.sidebar.page_link("pages/0_🏢_Jobs_Dashboard.py", label="Jobs Dashboard", icon="🏢")
-    st.sidebar.page_link("pages/1_🎯_Hiring_Request.py", label="Hiring Request", icon="🎯")
-    st.sidebar.page_link("pages/2_🔄_Sync_&_Screen.py", label="Sync & Screen", icon="🔄")
-    st.sidebar.page_link("pages/3_🎙️_Interviews.py", label="Interviews", icon="🎙️")
-    st.sidebar.page_link("pages/4_💼_Executive.py", label="Executive Review", icon="💼")
+    st.sidebar.page_link("main.py", label="Dashboard")
+    st.sidebar.page_link("pages/1_Hiring_Request.py", label="Hiring")
+    st.sidebar.page_link("pages/2_Sync_&_Screen.py", label="Synchronize Applicants")
+    st.sidebar.page_link("pages/3_Interviews.py", label="Interview Workspace")
+    st.sidebar.page_link("pages/4_ceo_review.py", label="CEO Review")
     st.sidebar.divider()
     st.sidebar.markdown(f"<div class='small-note'>API<br><strong>{API_URL}</strong></div>", unsafe_allow_html=True)
     if st.sidebar.button("Refresh data", use_container_width=True):

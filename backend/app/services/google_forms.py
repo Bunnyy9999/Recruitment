@@ -329,6 +329,9 @@ class GoogleFormsService:
                 if question_uploads:
                     answers[title] = "; ".join(item.file_name for item in question_uploads)
 
+        for title in question_titles.values():
+            answers.setdefault(title, "")
+
         applicant_name = cls._find_answer(answers, {"name", "full name", "candidate name", "applicant name"})
         if applicant_name is None:
             first_name = cls._find_answer(answers, {"first name", "given name"})
@@ -351,6 +354,8 @@ class GoogleFormsService:
     @staticmethod
     def _find_answer(answers: dict[str, str], accepted_titles: set[str]) -> str | None:
         for title, value in answers.items():
+            if not value:
+                continue
             normalized = " ".join(title.casefold().split()).rstrip(":")
             if normalized in accepted_titles or GoogleFormsService._is_applicant_name_title(normalized):
                 return value
@@ -359,7 +364,7 @@ class GoogleFormsService:
     @staticmethod
     def _find_answer_by_keyword(answers: dict[str, str], keyword: str) -> str | None:
         for title, value in answers.items():
-            if keyword in title.casefold() and "resume" not in title.casefold():
+            if value and keyword in title.casefold() and "resume" not in title.casefold():
                 return value
         return None
 

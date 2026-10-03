@@ -6,9 +6,9 @@ This file is the current implementation handoff. It is intended to give the next
 
 - Stages 1 through 5 are complete.
 - The next planned work is Stage 6, containerization and orchestration.
-- The full backend test suite last passed **92 tests** with `backend/.venv`.
+- The full backend suite currently runs 112 tests; 111 pass. One existing Windows path-normalization test fails in `backend/tests/test_utils.py` and is unrelated to the dashboard changes.
 - Automated tests use fake Gemini, Supabase, Drive, and Forms clients. The local app has successfully generated Gemini content and synced a Google Forms PDF submission.
-- The Supabase migration was applied using the Supabase CLI, which reported success. The schema was not separately queried after that push in this workspace.
+- Migrations through `20261002000008` were applied using the Supabase CLI. Migration `20261002000009_dashboard_job_filter_counts.sql` is the current pending migration; it adds per-card job counts and `posted_at`/`closed_at` lifecycle timestamps.
 
 ## Architecture Rules
 
@@ -78,7 +78,7 @@ Schemas are in `backend/app/schemas/`; Pydantic v2 models reject unknown fields.
 - `backend/app/schemas/google_forms_schema.py` defines typed `GoogleFormQuestion`, `GoogleFormQuestionSet`, `GoogleFormCloneRequest`, and `GoogleFormCloneResult` models. Supported types: `short_text`, `paragraph`, `multiple_choice`, `checkbox`. Choice questions require at least two unique options.
 - Gemini question generation is based on each validated job's criteria. Question texts vary by vacancy; the supported type/validation shape is fixed. The résumé-upload item is already in the source Form template and is retained.
 - `backend/app/services/google_forms.py` lazily uses a service-account file (`GOOGLE_SERVICE_ACCOUNT_FILE`), Drive template ID (`GOOGLE_FORM_TEMPLATE_ID`), and optional destination folder (`GOOGLE_DRIVE_FOLDER_ID`). It copies the template, updates the title, appends generated questions using Forms API, fetches and validates the responder URL, and cleans up a partially created copy after later API failure.
-- The service returns the Form ID and responder URL. It **does not yet save them to the job row or create/publish a job post**. Phase 4.2 must wire those actions through CRUD and include the job-specific responder URL in the reviewed post.
+- The service returns the Form ID and responder URL. The job clone-form route persists both through CRUD, and the LinkedIn blurb route requires and includes the job-specific responder URL.
 - `backend/app/services/local_media_service.py` wraps the local file handler and returns verified path/round metadata without inspecting audio bytes.
 - No live Google API call or real service-account credential was used in tests.
 
@@ -87,7 +87,7 @@ Schemas are in `backend/app/schemas/`; Pydantic v2 models reject unknown fields.
 ### Phase 4.1: Framework Assembly
 
 - `backend/app/main.py` creates the FastAPI app.
-- `backend/app/api/router.py` assembles the root API router, `/health`, and an empty `/api/v1` router reserved for feature endpoints.
+- `backend/app/api/router.py` assembles the root API router, `/health`, and the implemented `/api/v1` feature routers for jobs, dashboard summaries, candidates, applications, and interviews.
 - `backend/app/schemas/health_schema.py` validates `{"status":"ok"}`.
 - `/health` does not contact Supabase, Gemini, or Google, so it works without external credentials.
 - `backend/tests/test_api.py` covers health and router basics. The FastAPI TestClient currently emits a Starlette deprecation warning for its HTTPX transport, but tests pass.
@@ -109,7 +109,7 @@ Before code, compare every new endpoint request/response with the spec; if its p
 
 The HR sync endpoint now has no applicant request body: it retrieves all pages of responses from the linked form, downloads uploaded PDFs through Drive's binary media endpoint, extracts their text, screens each submission with its complete answer set, and returns per-response outcomes. PDFs stay in Google Drive; the backend does not save a local résumé copy. Cloned forms include required name/email fields if the template or generated questions do not already provide them. Applications retain original answers and the form response ID; a unique per-job index makes repeat syncs idempotent. The template's `Contact Number` answer is mapped to the candidate phone field. Applicant listings include candidate name, email, phone, and saved answers. Candidate history returns prior screening summaries separately from human remarks; the CEO final-decision action writes human remarks.
 
-Migration `supabase/migrations/20260930000000_add_form_submission_data.sql` was applied to the configured Supabase project. Only response sync requires the `forms.responses.readonly` scope; users with older OAuth tokens are prompted to consent when they first sync. Form cloning continues to use Drive and Forms body scopes. The full backend suite passes 92 tests; the local app's PDF sync flow has been confirmed.
+Migration `supabase/migrations/20260930000000_add_form_submission_data.sql` and dashboard count migrations through `20261002000008` were applied to the configured Supabase project. The current migration `20261002000009_dashboard_job_filter_counts.sql` still needs to be applied and verified. It adds per-card job counts, `posted_at`/`closed_at`, and lifecycle timestamp triggers. Only response sync requires the `forms.responses.readonly` scope; users with older OAuth tokens are prompted to consent when they first sync. Form cloning continues to use Drive and Forms body scopes. The local app's PDF sync flow has been confirmed.
 
 ## Stage 5 Completed Locally
 
@@ -122,6 +122,9 @@ The Streamlit frontend is implemented as a multipage app:
 - `frontend/pages/3_🎙️_Interviews.py`: numbered rounds, scheduling, feedback, MP3 upload, and the HR hand-off to CEO review after all rounds are complete.
 - `frontend/pages/4_💼_Executive.py`: CEO dossier review and final decision.
 - `frontend/ui.py`: shared styling and REST client.
+- `frontend/pages/5_🔎_Dashboard_Drilldown.py`: card-specific job drilldowns with lifecycle labels and applicant counts.
+- `frontend/pages/6_📋_Dashboard_Job_Applicants.py`: filtered, paginated job applicant list.
+- `frontend/pages/7_👤_Candidate_Detail.py`: selected candidate dossier, expandable form answers, and filter-preserving navigation.
 
 Generated JD and LinkedIn text is copied into the corresponding Streamlit editor state immediately after generation. The sync page shows candidate phone, selected-applicant form answers, and prior screening summaries separately from human remarks. Its sync-run table reports the latest run; the applicant table lists persisted applications for the selected job.
 
@@ -132,15 +135,17 @@ The frontend has its own environment at `frontend/.venv`; Docker is not required
 Page-oriented reads use PostgreSQL functions through FastAPI endpoints to avoid fetching complete applicant lists or making multiple database reads for a single view:
 
 - The command center gets its jobs and pipeline counts from `/api/v1/dashboard/summary`.
+- The summary RPC now includes card-specific counts on each job. Each applicant dashboard card shows only jobs with matching applicants and displays the relevant count.
+- Job selectors show the job lifecycle date and applicant count. Draft jobs use `created_at`, posted jobs use `posted_at`, and closed jobs use `closed_at`.
 - Sync filters and paginates applicants server-side (20 per UI page); original answers remain available for the rows on that page.
-- Jobs Dashboard filters/searches/paginates server-side and fetches the complete form answers only for the selected applicant. Its pending filter includes applications with no screening decision or a pending final decision.
+- Jobs Dashboard filters/searches/paginates server-side. Selecting a row opens Candidate Detail, which fetches the authoritative application dossier and displays complete form answers without rendering the dossier beneath the table. Browser and in-app back navigation preserve the active filter.
 - Interviews combines active-applicant choices and selected interview rounds in a workspace read.
 - Executive Review combines eligible-applicant choices and the selected full dossier in a workspace read.
 - Hiring Request, Sync, Jobs Dashboard, Interviews, and Executive Review use short-lived Streamlit data caches. Pages clear relevant caches after mutations.
 
 Cache TTLs are 30 seconds for job lists and candidate history, 15 seconds for Sync and Jobs Dashboard applicant pages, and 10 seconds for interview and executive workspaces.
 
-The associated Supabase RPC functions and deployment migrations are listed in `db.md`. Apply outstanding migrations with `supabase db push`; use `npx --yes supabase@latest db push --dry-run` to preview them first. The backend suite currently passes 111 tests. The migrations must be applied before newly added page-read endpoints can use their functions.
+The associated Supabase RPC functions and deployment migrations are listed in `db.md`. Apply outstanding migrations with `npx.cmd --yes supabase@latest db push`; use `npx.cmd --yes supabase@latest db push --dry-run` to preview them first. Migration `20261002000009_dashboard_job_filter_counts.sql` must be applied for card-specific filtering and lifecycle dates. Without Docker, run the repeatable `supabase/seed.sql` in the Supabase SQL Editor after the migration. Dashboard detail back controls use `st.switch_page`, and browser history restores the active filter.
 
 ### Local Run Commands
 
@@ -207,4 +212,4 @@ Stage 5 implements Streamlit role routing and screens for hiring setup, screenin
 
 ## Last Verified Test State
 
-Last recorded full-suite run: **92 tests passed**. The local app has successfully synced and screened a Google Forms PDF submission. Automated tests still use fake integrations and do not replace environment-backed Supabase/RLS verification.
+Last recorded full-suite run: **111 passed, 1 unrelated failure out of 112 tests**. The failing test is the existing Windows path-normalization assertion in `backend/tests/test_utils.py`. The local app has successfully synced and screened a Google Forms PDF submission. Automated tests still use fake integrations and do not replace environment-backed Supabase/RLS verification.

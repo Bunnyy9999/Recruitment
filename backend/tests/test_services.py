@@ -598,6 +598,23 @@ class GoogleFormsServiceTests(TestCase):
         self.assertEqual(submissions[0].resume_files[0].mime_type, "application/pdf")
         self.assertEqual(forms.response_pages.calls[1]["pageToken"], "next-page")
 
+    def test_retains_unanswered_form_questions_as_empty_answers(self) -> None:
+        submission = GoogleFormsService._parse_submission(
+            {
+                "responseId": "response-3",
+                "respondentEmail": "pat@example.com",
+                "answers": {
+                    "name-q": {
+                        "textAnswers": {"answers": [{"value": "Pat Example"}]}
+                    }
+                },
+            },
+            {"name-q": "Full Name", "experience-q": "Years of experience"},
+        )
+
+        self.assertEqual(submission.answers["Full Name"], "Pat Example")
+        self.assertEqual(submission.answers["Years of experience"], "")
+
     def test_extracts_pdf_resume_text_from_drive_upload(self) -> None:
         submission = GoogleFormSubmission(
             response_id="response-1",
@@ -762,6 +779,30 @@ class FormSyncServiceTests(TestCase):
         self.assertIn("Years using Python?", screening_input)
         self.assertNotIn("sam@example.com", screening_input)
         self.assertIn("[EMAIL]", screening_input)
+
+    def test_sync_ignores_invalid_optional_linkedin_value(self) -> None:
+        self.submission.answers["LinkedIn URL"] = "Not provided"
+        candidate = SimpleNamespace(
+            id=uuid4(), full_name="Sam Example", email="sam@example.com"
+        )
+        application = SimpleNamespace(
+            id=uuid4(), pipeline_status=PipelineStatus.active_pipeline
+        )
+        with (
+            patch("backend.app.services.form_sync_service.candidates_db.get_application_for_form_response", return_value=None),
+            patch("backend.app.services.form_sync_service.candidates_db.get_application_for_job_identity", return_value=None),
+            patch("backend.app.services.form_sync_service.candidates_db.find_candidate_by_identity", return_value=None),
+            patch("backend.app.services.form_sync_service.candidates_db.create_candidate", return_value=candidate) as create_candidate,
+            patch("backend.app.services.form_sync_service.candidates_db.create_screened_application", return_value=application),
+        ):
+            result = sync_form_responses(
+                self.job,
+                forms_service=self.forms,
+                ai_provider=self.provider,
+            )
+
+        self.assertEqual(result.synced, 1)
+        self.assertIsNone(create_candidate.call_args.args[0].linkedin_url)
 
     def test_sync_skips_when_any_identity_matches_existing_job_applicant(self) -> None:
         existing_application = SimpleNamespace(
