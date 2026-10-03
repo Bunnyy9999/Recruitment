@@ -21,17 +21,18 @@ except Exception as error:
 
 create_col, studio_col = st.columns([1, 1.25])
 with create_col:
-    st.subheader("New requisition")
+    st.subheader("New Job Posting")
     st.caption(":red[*] Required")
     with st.form("create_job"):
         title = st.text_input("Role title :red[*]", placeholder="Senior Data Engineer")
-        stack = st.text_area("Technology stack :red[*]", placeholder="Python, PostgreSQL, dbt")
-        seniority = st.text_input("Seniority :red[*]", placeholder="Senior")
+        stack = st.text_area("Technology stack :red[*]", placeholder="Python, PostgreSQL, LangChain")
+        seniority = st.text_input("Seniority :red[*]", placeholder="Senior, Junior ")
         required_experience = st.text_input("Required experience :red[*]", placeholder="5+ years building production data systems")
-        salary = st.text_input("Salary (optional)", placeholder="$120,000-$160,000 or competitive")
-        location = st.text_input("Location (optional)", placeholder="New York, NY")
+        salary = st.text_input("Salary (optional)", placeholder="120,000-160,000 ,120,000 or competitive")
+        location = st.text_input("Location (optional)", placeholder="Lahore, Pakistan")
         work_type = st.text_input("Work type (optional)", placeholder="Remote, hybrid, or on-site")
         university = st.text_input("University (optional)", placeholder="Preferred universities, if applicable")
+        description = st.text_area("Job description (optional)", placeholder="A detailed description of the role and responsibilities.")
         submitted = st.form_submit_button("Create requisition", type="primary", use_container_width=True)
     if submitted:
         payload = {
@@ -49,10 +50,10 @@ with create_col:
             st.rerun()
 
 with studio_col:
-    st.subheader("Requisition studio")
+   
     options = job_options(jobs)
     if not options:
-        st.info("Create your first requisition to begin.")
+        st.info("Create your first job posting to begin.")
         st.stop()
     option_labels = list(options)
     requested_job_id = st.session_state.get("selected_job_id")
@@ -60,7 +61,7 @@ with studio_col:
         (index for index, label in enumerate(option_labels) if options[label]["id"] == requested_job_id),
         0,
     )
-    job = options[st.selectbox("Select requisition", option_labels, index=selected_index, key="hiring-selected-job")]
+    job = options[st.selectbox("Select Job", option_labels, index=selected_index, key="hiring-selected-job")]
     st.markdown(f"{status_badge(job['status'])}  **{job['title']}**", unsafe_allow_html=True)
     tabs = st.tabs(["Criteria", "Job description", "Application link", "LinkedIn post"])
     with tabs[0]:
